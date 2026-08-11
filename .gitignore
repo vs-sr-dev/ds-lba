@@ -55,3 +55,7 @@ lba1-classic-community-main/
 # ── Local working notes ──────────────────────────────────────────────────
 # Session handover scratch: names playtesters and local machine paths.
 NEXT-SESSION-TODO.md
+
+# Local tool settings, and the temporary files they write while you work —
+# those appear and vanish mid-command, which is enough to break `git add -A`.
+.claude/

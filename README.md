@@ -17,9 +17,10 @@ Honest version, because this matters more than a feature list:
 
 - **One playtester has finished the game end to end, on melonDS.** No blocking
   crash on that run. That is a single complete playthrough, not a QA campaign.
-- **Real hardware runs it**, verified on a DS Phat: identical behaviour to the
-  emulator, 50 fps, longer initial load from the card. That test covered the
-  opening hours, not the whole game.
+- **Real hardware runs it**, verified on a 3DS in DS mode: identical behaviour
+  to the emulator, 50 fps, longer initial load from the card. That test covered
+  the opening hours, not the whole game. It has not been run on an original DS
+  or a DSi.
 - **Expect crashes.** Every bug found so far has been a latent defect of the
   1994 code that only a machine with alignment rules and an unmapped page zero
   takes seriously — see [DEVLOG.md](DEVLOG.md). There is no reason to believe
