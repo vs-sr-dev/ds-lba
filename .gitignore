@@ -1,0 +1,57 @@
+# ── Game data ────────────────────────────────────────────────────────────
+# This repository is BYOA: not one byte of LBA1 lives here. Everything below
+# is staged from your own copy of the game by tools/make_*_nds.sh, and must
+# never be committed. The directory rules cover where the scripts put things;
+# the extension rules catch a stray copy anywhere else in the tree.
+platform/nds/nitrofiles/
+platform/nds/sd_files/
+platform/sdl/testdata/
+milestones/*/nitrofiles/
+sd_root/
+testdata/
+dist/
+
+*.hqr
+*.HQR
+*.vox
+*.VOX
+*.voc
+*.VOC
+*.lba
+*.LBA
+*.lst
+*.LST
+lba.cfg
+LBA.CFG
+*.dat
+*.DAT
+*.dot
+*.DOT
+*.fla
+*.FLA
+*.mp3
+*.wav
+*.bmp
+*.pcx
+
+# ── Build output ─────────────────────────────────────────────────────────
+build/
+*.o
+*.d
+*.elf
+*.nds
+*.map
+*.exe
+*.dll
+*.stamp
+*.log
+
+# ── Upstream reference ───────────────────────────────────────────────────
+# A pristine copy of lba1-classic-community is kept locally to diff against.
+# It is not ours to redistribute here — see README, "Where the engine
+# comes from", for the upstream URL.
+lba1-classic-community-main/
+
+# ── Local working notes ──────────────────────────────────────────────────
+# Session handover scratch: names playtesters and local machine paths.
+NEXT-SESSION-TODO.md

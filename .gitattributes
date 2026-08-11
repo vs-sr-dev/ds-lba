@@ -1,0 +1,20 @@
+# Normalise text in the repository, and check it out with LF where the tool
+# that reads it cares. The build runs inside a Linux container even on
+# Windows hosts: a shell script or Makefile checked out with CRLF fails there
+# in ways that read as anything but a line-ending problem.
+* text=auto
+
+*.sh    text eol=lf
+Makefile text eol=lf
+*.c     text eol=lf
+*.h     text eol=lf
+*.C     text eol=lf
+*.H     text eol=lf
+*.md    text eol=lf
+
+# Never touched: the game's config parser terminates lines on CR and walks off
+# the end of its buffer without one. Nothing here is committed today (it is
+# staged from your own copy of the game), but if that ever changes, it must
+# not be normalised.
+*.cfg   -text
+*.CFG   -text
