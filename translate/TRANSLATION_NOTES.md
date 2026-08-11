@@ -1,285 +1,316 @@
 # TRANSLATION_NOTES — LIB386/LIB_SVGA ASM → C (translate/)
 
-Sessione: traduzione dei blitter SVGA (Watcom/MASM 386 flat) in C portabile per il
-port DS. Sorgenti pristini: `lba1-classic-community-main/LIB386/LIB_SVGA/*.ASM`.
-Firme prese da `engine/LIB_SVGA/LIB_SVGA.H` (che è la verità per i tipi).
+Session: translating the SVGA blitters (Watcom/MASM 386 flat) into portable C
+for the DS port. Pristine sources: `lba1-classic-community-main/LIB386/LIB_SVGA/*.ASM`.
+Signatures taken from `engine/LIB_SVGA/LIB_SVGA.H`, which is the authority on
+types.
 
-## Convenzioni generali
+## General conventions
 
-- Tutti i file includono solo `translate.h` (+ `<string.h>` dove serve): gli header
-  dell'engine non sono includibili puliti con GCC (`__far`, `cdecl` Watcom), quindi
-  i globals sono ridichiarati localmente in `translate.h` con gli stessi tipi di
-  `LIB_SVGA.H` (`WORD ClipXmin`, `ULONG TabOffLine`, `UBYTE *Log`, `WORD Screen_X`…).
-  Quando gli header engine saranno sistemati, basterà sostituire l'include.
-- `TabOffLine` è dichiarata scalare nell'header engine; vi si accede come array via
-  `TABOFFLINE` (`(ULONG*)&TabOffLine`), stesso stile di `engine/game/CPYMASK.C`.
-- Stride: molte routine originali usano `Screen_X`, altre hardcodano **640**
-  (S_LINE, ZOOM, S_FILLV, S_STRING rewind, path clippati di GRAPH_A/MASK_A).
-  Mantenuto fedelmente: finché `Screen_X == 640` è indifferente, ma NON sostituire
-  640 con Screen_X senza rifare il confronto pixel-perfect.
-- Contatori a 8 bit (`dec bl/bh`) resi con `UBYTE` + do/while: un DY o NbBlock pari
-  a 0 itera 256 volte, come su x86.
-- Accessi word/dword su indirizzi potenzialmente dispari (rep stosw/movsd, `mov [edi], ax`)
-  resi con operazioni byte/`memset`/`memcpy`: nessun accesso disallineato per ARM9.
-  Unica assunzione: i bank grafici (`((ULONG*)bank)[num]`) sono allineati a 4
-  (stessa assunzione della traduzione community CPYMASK.C).
-- Parità di indirizzo x86 (`test edi,1` in Copper/Bopper/Trame): resa come parità
-  della x di schermo, assumendo `Log` allineato pari (su DOS era allineato; su DS lo sarà).
+- Every file includes only `translate.h` (plus `<string.h>` where needed): the
+  engine headers do not include cleanly under GCC (`__far`, Watcom `cdecl`), so
+  the globals are redeclared locally in `translate.h` with the same types as
+  `LIB_SVGA.H` (`WORD ClipXmin`, `ULONG TabOffLine`, `UBYTE *Log`,
+  `WORD Screen_X`…). Once the engine headers are cleaned up, swapping the
+  include is all it takes.
+- `TabOffLine` is declared as a scalar in the engine header; it is accessed as
+  an array through `TABOFFLINE` (`(ULONG*)&TabOffLine`), the same style as
+  `engine/game/CPYMASK.C`.
+- Stride: many of the original routines use `Screen_X`, others hardcode **640**
+  (S_LINE, ZOOM, S_FILLV, the S_STRING rewind, the clipped paths of
+  GRAPH_A/MASK_A). Kept faithfully: as long as `Screen_X == 640` it makes no
+  difference, but do NOT replace 640 with Screen_X without redoing the
+  pixel-perfect comparison.
+- 8-bit counters (`dec bl/bh`) are rendered as `UBYTE` + do/while: a DY or
+  NbBlock of 0 iterates 256 times, exactly as on x86.
+- Word/dword accesses at potentially odd addresses (rep stosw/movsd,
+  `mov [edi], ax`) are rendered as byte operations / `memset` / `memcpy`: no
+  unaligned access on the ARM9. The single assumption is that the graphics
+  banks (`((ULONG*)bank)[num]`) are 4-aligned — the same assumption the
+  community translation of CPYMASK.C makes.
+- x86 address parity (`test edi,1` in Copper/Bopper/Trame) is rendered as the
+  parity of the screen x, assuming `Log` is evenly aligned (it was on DOS; it
+  will be on the DS).
 
-## Moduli
+## Modules
 
-### s_plot.c (S_PLOT.ASM) — confidenza ALTA
-Plot/GetPlot con clipping inclusivo. GetPlot ritorna 0 fuori clip. Nessun dubbio.
+### s_plot.c (S_PLOT.ASM) — confidence HIGH
+Plot/GetPlot with inclusive clipping. GetPlot returns 0 outside the clip
+region. Nothing in doubt.
 
-### s_box.c (S_BOX.ASM) — confidenza ALTA
-Rettangolo pieno clippato, riempimento per riga (memset ≡ stosd/stosb). Stride `Screen_X`.
+### s_box.c (S_BOX.ASM) — confidence HIGH
+Clipped filled rectangle, one fill per row (memset ≡ stosd/stosb). Stride
+`Screen_X`.
 
-### s_block3.c (S_BLOCK3.ASM) — confidenza ALTA
-`CopyBlockIncrust`: copia rettangolo con colore 0 trasparente (test sul **sorgente**).
-I commenti del sorgente ASM ("BX Delta Y") sono invertiti; seguito il codice, non i commenti.
+### s_block3.c (S_BLOCK3.ASM) — confidence HIGH
+`CopyBlockIncrust`: rectangle copy with colour 0 transparent (tested on the
+**source**). The comments in the ASM source ("BX Delta Y") are swapped; the
+code was followed, not the comments.
 
-### s_block2.c (S_BLOCK2.ASM) — confidenza ALTA
-`CopyBlockOnBlack`: l'intero balletto scasb/movsd equivale per-pixel a
-`if (dst==0) dst=src`; verificata l'equivalenza dei run (nessun caso in cui la
-scansione salti o riscriva un byte). Contatori CptPixl/CptLine a 16 bit irrilevanti
-(dimensioni schermo < 64K).
+### s_block2.c (S_BLOCK2.ASM) — confidence HIGH
+`CopyBlockOnBlack`: the whole scasb/movsd dance is per-pixel equivalent to
+`if (dst==0) dst=src`; run equivalence was verified (there is no case where the
+scan skips or rewrites a byte). The 16-bit CptPixl/CptLine counters are
+irrelevant here (screen dimensions < 64K).
 
-### graphmsk.c (GRAPHMSK.ASM) — confidenza ALTA
-`CalcGraphMsk`: converte brick RLE (00=salto/01=copy/10=repeat, count+1) nel formato
-mask (contatori alternati skip/draw, la riga inizia sempre con uno skip, 0 inserito
-se serve). NB: opcode `11xxxxxx` trattato come repeat (bit7 testato per primo), come
-nell'ASM (il commento di formato direbbe altro). Accumulatore NbData a 8 bit (wrappa
-oltre 255, fedele). Header DX/DY/HotX/HotY copiato byte a byte.
+### graphmsk.c (GRAPHMSK.ASM) — confidence HIGH
+`CalcGraphMsk`: converts an RLE brick (00=skip / 01=copy / 10=repeat, count+1)
+into the mask format (alternating skip/draw counters; a row always starts with
+a skip, with a 0 inserted if needed). Note: opcode `11xxxxxx` is treated as
+repeat (bit 7 is tested first), as in the ASM — the format comment would say
+otherwise. The NbData accumulator is 8-bit (it wraps past 255; faithful). The
+DX/DY/HotX/HotY header is copied byte by byte.
 
-### zoom.c (ZOOM.ASM) — confidenza ALTA
-`ScaleLine`/`ScaleBox`: DDA 16.16 con accumulatore frazionario 16 bit + carry
-(`add bx,dx / adc esi,ebp`) riprodotto esatto. Fedeltà mantenuta su:
-- ScaleLine NON somma xs0/xe0 ai puntatori (usa solo i delta) e a differenza di
-  ScaleBox non fa +1 sul delta sorgente;
-- ScaleBox avanza le righe sorgente con `TabOffLine[n]` come offset relativo
-  (assume layout lineare 640);
-- divisione per (xd1-xd0)==0 → crash come l'originale (nessuna guardia aggiunta).
-ScaleSprite 16-bit nel file originale è dead code dopo `End`: non tradotto.
+### zoom.c (ZOOM.ASM) — confidence HIGH
+`ScaleLine`/`ScaleBox`: a 16.16 DDA with a 16-bit fractional accumulator plus
+carry (`add bx,dx / adc esi,ebp`), reproduced exactly. Fidelity kept on:
+- ScaleLine does NOT add xs0/xe0 to the pointers (it uses the deltas only) and,
+  unlike ScaleBox, does not add 1 to the source delta;
+- ScaleBox advances the source rows using `TabOffLine[n]` as a relative offset
+  (assuming a linear 640 layout);
+- division by (xd1-xd0)==0 → crash, as in the original (no guard added).
+The 16-bit ScaleSprite in the original file is dead code after `End`: not
+translated.
 
-### s_line.c (S_LINE.ASM) — confidenza ALTA (dettagli MEDIA)
-`Line`/`Line_A` (Line_A esportata: la chiama P_OB_ISO). Clipping Cohen-Sutherland
-iterativo + Bresenham. Le intersezioni usano `imul si/idiv di` a 16 bit con
-`movsx` del quoziente: riprodotto con cast a `WORD` (identico finché i delta stanno
-in 16 bit — sempre vero a schermo). Il ramo verticale usa `adc edi,esi` dopo il
-riporto: dimostrato che il carry è sempre 1 in quel punto (`err+2dy-2dx > 0`),
-quindi `pDest += stride+1`. Stride hardcoded ±640. Da verificare pixel-perfect:
-linee esattamente diagonali e i casi di clip multiplo (l'ordine dei rami c0..c4 è
-stato mantenuto identico).
+### s_line.c (S_LINE.ASM) — confidence HIGH (details MEDIUM)
+`Line`/`Line_A` (Line_A is exported: P_OB_ISO calls it). Iterative
+Cohen-Sutherland clipping plus Bresenham. The intersections use 16-bit
+`imul si` / `idiv di` with a `movsx` of the quotient: reproduced with a cast to
+`WORD` (identical as long as the deltas fit in 16 bits — always true on
+screen). The vertical branch uses `adc edi,esi` after the carry: the carry was
+proved to be always 1 at that point (`err+2dy-2dx > 0`), hence
+`pDest += stride+1`. Stride hardcoded to ±640. Still to verify pixel-perfect:
+exactly diagonal lines, and the multiple-clip cases (the order of the c0..c4
+branches was kept identical).
 
-### s_block.c (S_BLOCK.ASM) — confidenza ALTA
-`CopyBlock`/`SaveBlock`/`RestoreBlock`: copie rettangolari; l'unrolling 2-righe
-dell'ASM è pura ottimizzazione (memcpy per riga è byte-identico). NB: negli ultimi
-due parametri di Save/RestoreBlock l'header dice dx/dy ma il codice li usa come
-x1/y1 (`width = dx - x + 1`): mantenuto il comportamento del codice.
+### s_block.c (S_BLOCK.ASM) — confidence HIGH
+`CopyBlock`/`SaveBlock`/`RestoreBlock`: rectangle copies; the ASM's two-row
+unrolling is pure optimisation (a memcpy per row is byte-identical). Note: in
+the last two parameters of Save/RestoreBlock the header says dx/dy but the code
+uses them as x1/y1 (`width = dx - x + 1`) — the code's behaviour was kept.
 
-### mask_a.c (MASK_A.ASM) — confidenza ALTA (path clippato MEDIA)
-`CoulMask`/`AffMask`/`GetDxDyMask`. Formato mask: contatori alternati skip/draw.
-Path non clippato: scrive `ColMask` direttamente. Path clippato: espande la riga in
-`BufferClip[512]` (0=skip, ColMask=draw) e blitta saltando gli zeri → **quirk
-fedele**: con `ColMask==0` il path clippato non disegna nulla mentre quello non
-clippato scrive zeri. Stride 640 hardcoded nel path clippato. Bookkeeping di fine
-riga (EndBlock `inc esi` / `dec esi;inc esi`) verificato istruzione per istruzione.
-AffMask_Asm non esportata (nessun chiamante esterno; FONT usa AffMask C).
+### mask_a.c (MASK_A.ASM) — confidence HIGH (clipped path MEDIUM)
+`CoulMask`/`AffMask`/`GetDxDyMask`. Mask format: alternating skip/draw counters.
+Unclipped path: writes `ColMask` directly. Clipped path: expands the row into
+`BufferClip[512]` (0=skip, ColMask=draw) and blits skipping the zeros → a
+**faithful quirk**: with `ColMask==0` the clipped path draws nothing while the
+unclipped one writes zeros. Stride 640 is hardcoded in the clipped path. The
+end-of-row bookkeeping (EndBlock `inc esi` / `dec esi;inc esi`) was verified
+instruction by instruction. AffMask_Asm is not exported (no external callers;
+FONT uses the C AffMask).
 
-### graph_a.c (GRAPH_A.ASM) — confidenza ALTA (path clippato MEDIA)
-`AffGraph`/`GetDxDyGraph`. RLE brick come graphmsk. Quirk fedeli:
-- non clippato: i blocchi Copy/Repeat scrivono anche pixel di colore 0;
-  clippato: il colore 0 espanso in BufferClip diventa trasparente al blit;
-- skip delle righe sopra ClipYmin: repeat consuma 1 byte dato, copy `count+1`;
-- contatore righe a 8 bit (`inc al` / `dec bh`).
-Da verificare pixel-perfect: brick che intersecano il bordo sinistro/destro
-(OffsetBegin/NbPix) e brick con blocchi contenenti colore 0.
+### graph_a.c (GRAPH_A.ASM) — confidence HIGH (clipped path MEDIUM)
+`AffGraph`/`GetDxDyGraph`. RLE bricks as in graphmsk. Faithful quirks:
+- unclipped: Copy/Repeat blocks also write colour-0 pixels;
+  clipped: a colour 0 expanded into BufferClip becomes transparent at blit time;
+- skipping the rows above ClipYmin: repeat consumes 1 data byte, copy consumes
+  `count+1`;
+- 8-bit row counter (`inc al` / `dec bh`).
+Still to verify pixel-perfect: bricks crossing the left/right edge
+(OffsetBegin/NbPix), and bricks whose blocks contain colour 0.
 
-### s_string.c (S_STRING.ASM) — confidenza ALTA
-`AffString`/`CoulText`. Font 8x8: i dati `db` dell'ASM esistono già in C in
-`engine/LIB_SVGA/FONT8X8.C` (spot-check ok sulle prime righe) → usati via extern,
-non duplicati. `Text_Paper == 0xFF` = sfondo trasparente. Avanzamento riga con
-`Screen_X` ma rewind cella con `(640*8)-8` hardcoded, come l'ASM. Nessun clipping.
-La variante Font6X6 (AffString1) è in `comment #`: dead code, non tradotta.
+### s_string.c (S_STRING.ASM) — confidence HIGH
+`AffString`/`CoulText`. 8x8 font: the ASM's `db` data already exists in C in
+`engine/LIB_SVGA/FONT8X8.C` (spot-checked against the first rows) → used via
+extern rather than duplicated. `Text_Paper == 0xFF` means a transparent
+background. Row advance uses `Screen_X`, but the cell rewind hardcodes
+`(640*8)-8`, as the ASM does. No clipping. The Font6X6 variant (AffString1) is
+inside a `comment #`: dead code, not translated.
 
-### s_fillv.c (S_FILLV.ASM) — confidenza MEDIA/ALTA
-`FillVertic`/`FillVertic_A` (esportata: la chiama P_OB_ISO)/`SetFillDetails` +
-9 filler. Punti chiave:
-- **TabVerticD/TabCoulD**: l'ASM li indirizza come `TabVerticG+960`/`TabCoulG+960`;
-  qui array separati (ognuno ≥480 WORD). Chi riempie le tabelle (S_POLY futuro)
-  dovrà usare le stesse coppie di array.
-- Indice tabella salti: 0 Triste, 1 Tele, 2 Copper, 3 Bopper, 4 Marbre, 5 Trans,
-  6 Trame, 7 Gouraud, 8 Dith (le `POLY_*` equ di svga.ash NON corrispondono: fa
-  fede la tabella dd). SetFillDetails clampa unsigned a 2 e scambia la tabella.
-- Aritmetica 8.8 a 16 bit riprodotta bit-exact (`UWORD` + carry esplicito):
-  Marbre usa lo step byte-swappato con carry sfalsato (`adc ax,dx`), Dith usa
-  `rol dl,cl` col contatore corrente come rumore di dithering (rotazione mod 8),
-  Tele accumula `ax` seminato con xG e `bx=17371` evoluto `rol 2/inc` sull'intero
-  poligono.
-- Quirk fedeli: Copper NON scrive gli ultimi (len&1 ? 1 : 0)+((len&3)==3 ? 1 : 0)
-  byte della campata (`and cl,2` invece di `and cl,3`); in modalità "up"
-  Copper/Bopper decrementano il colore anche su righe vuote; Triche/Gouraud/Dith
-  NON avanzano il puntatore intensità sulle righe vuote (desync voluto/fedele);
-  Gouraud scarta il resto della divisione; il pixel singolo vale la media (l0),
-  in Marbre vale il colore END.
-- `sar ax,1` (Dith opt) reso con `>>` su int negativo: ok con GCC/devkitARM
-  (shift aritmetico), non-C-strict. Annotato.
-Da verificare pixel-perfect in priorità: Dith (ordine rol/add), Gouraud rami
-opt/iopt (2-3 pixel), Copper up/down ai bordi dei multipli di 16.
+### s_fillv.c (S_FILLV.ASM) — confidence MEDIUM/HIGH
+`FillVertic`/`FillVertic_A` (exported: P_OB_ISO calls it)/`SetFillDetails`, plus
+nine fillers. Key points:
+- **TabVerticD/TabCoulD**: the ASM addresses these as `TabVerticG+960` /
+  `TabCoulG+960`; here they are separate arrays (each ≥480 WORDs). Whatever
+  fills the tables (S_POLY, later) must use the same pairs of arrays.
+- Jump-table index: 0 Triste, 1 Tele, 2 Copper, 3 Bopper, 4 Marbre, 5 Trans,
+  6 Trame, 7 Gouraud, 8 Dith. The `POLY_*` equates in svga.ash do NOT match —
+  the `dd` table is the authority. SetFillDetails clamps unsigned to 2 and
+  swaps the table.
+- 8.8 arithmetic in 16 bits, reproduced bit-exact (`UWORD` plus explicit
+  carry): Marbre uses the byte-swapped step with an offset carry (`adc ax,dx`);
+  Dith uses `rol dl,cl` with the current counter as dither noise (rotation
+  mod 8); Tele accumulates `ax` seeded with xG and `bx=17371`, evolved with
+  `rol 2`/`inc` across the whole polygon.
+- Faithful quirks: Copper does NOT write the last
+  `(len&1 ? 1 : 0) + ((len&3)==3 ? 1 : 0)` bytes of the span (`and cl,2` instead
+  of `and cl,3`); in "up" mode Copper/Bopper decrement the colour even on empty
+  rows; Triche/Gouraud/Dith do NOT advance the intensity pointer on empty rows
+  (a deliberate desync, faithfully reproduced); Gouraud discards the division
+  remainder; a single pixel takes the average (l0), and in Marbre it takes the
+  END colour.
+- `sar ax,1` (the Dith optimisation) is rendered as `>>` on a negative int: fine
+  with GCC/devkitARM (arithmetic shift), not strictly conforming C. Noted.
+Still to verify pixel-perfect, in priority order: Dith (rol/add ordering),
+the Gouraud opt/iopt branches (2-3 pixels), Copper up/down at multiple-of-16
+boundaries.
 
-### p_trigo.c (LIB_3D/P_TRIGO.ASM) — confidenza ALTA
-Trigonometria fixed point (P_SinTab 1.15, matrici >>14 — i commenti ASM dicono
-">>15" ma il codice fa `sar 14`). Nessuna tabella dati da estrarre: P_SinTab è
-già in `engine/LIB_3D/P_SINTAB.C`. Dati fedeli al layout ASM: XCentre/YCentre
-sono **LONG** (dd) anche se LIB_3D.H li dichiara WORD (little-endian: la
-lettura del low word funziona; nessun C dell'engine li tocca direttamente).
-- Le entry register-based usate da P_OB_ISO sono esposte in `lib3d_p.h`:
-  `Rot/WorldRot(WORD,WORD,WORD)`, `LongWorldRot/LongInverseRot(LONG…)` (64 bit
-  come imul/adc/shrd), `RotMatIndex2(src,dst)` (con LMatriceDummy intermedia e
-  gli stessi alias/copy del flusso alpha→gamma→beta), `Proj_3D` (tutto a 16
-  bit, inclusa la saturazione bp=32767 e l'idiv 32/16 senza guardia div-by-0),
-  `Proj_ISO` (input 32 bit, `neg bx/add bx,[YCentre]` finali a 16 bit),
-  `RotList/TransRotList` (add di X0/Y0/Z0 a 16 bit, contatore `compteur` WORD:
-  0 → 65536 iterazioni, fedele).
-- `ProjettePoint`: il test di Z-clip 3D è `or cx,cx` (16 bit) — mantenuto.
-- `LongProjettePoint`: saturazione `shl/mov/adc` → 0x7FFF/0x8000 riprodotta.
+### p_trigo.c (LIB_3D/P_TRIGO.ASM) — confidence HIGH
+Fixed-point trigonometry (P_SinTab 1.15, matrices >>14 — the ASM comments say
+">>15" but the code does `sar 14`). No data tables to extract: P_SinTab is
+already in `engine/LIB_3D/P_SINTAB.C`. Data faithful to the ASM layout:
+XCentre/YCentre are **LONG** (dd) even though LIB_3D.H declares them WORD
+(little-endian, so reading the low word works; no engine C touches them
+directly).
+- The register-based entry points used by P_OB_ISO are exposed in `lib3d_p.h`:
+  `Rot/WorldRot(WORD,WORD,WORD)`, `LongWorldRot/LongInverseRot(LONG…)` (64-bit,
+  like imul/adc/shrd), `RotMatIndex2(src,dst)` (with the intermediate
+  LMatriceDummy and the same aliases/copies of the alpha→gamma→beta flow),
+  `Proj_3D` (entirely 16-bit, including the bp=32767 saturation and the 32/16
+  idiv with no divide-by-zero guard), `Proj_ISO` (32-bit input, final
+  `neg bx / add bx,[YCentre]` in 16 bits), `RotList/TransRotList` (16-bit adds
+  of X0/Y0/Z0, WORD `compteur`: 0 → 65536 iterations, faithful).
+- `ProjettePoint`: the 3D Z-clip test is `or cx,cx` (16-bit) — kept.
+- `LongProjettePoint`: the `shl/mov/adc` saturation → 0x7FFF/0x8000 reproduced.
 - `SetInverseAngleCamera`: FlipMatrice(World→Dummy) + Copy(Dummy→World)
-  (ordine push Watcom right-to-left verificato).
-Da verificare pixel-perfect: niente di specifico; unico rischio i wrap a 32
-bit dei prodotti matrice (fatti via unsigned MUL32/ADD32).
+  (Watcom's right-to-left push order verified).
+Still to verify pixel-perfect: nothing specific; the only risk is the 32-bit
+wraps of the matrix products (done through unsigned MUL32/ADD32).
 
-### s_poly.c (LIB_SVGA/S_POLY.ASM) — confidenza MEDIA/ALTA
-`ComputePoly/_A`, `ComputeSphere/_A` + clip S-H. Punti chiave:
-- **TabPoly e TabPolyClip contigui** in un solo array (97+96 WORD): il closing
-  point (`movsw/movsd` "transitivité") di un poly a 32 punti sborda di 2 word
-  in TabPolyClip esattamente come su DOS.
-- I 4 ClipGauche/Droit/Haut/Bas sono un'unica `ClipPolyEdge(primIdx, bound,
-  outsideIsGreater)` — sono identici a meno di asse/bound/verso nell'ASM.
-  Normalizzazione del verso dell'edge prima dell'idiv ("clip 2 poly collés")
-  mantenuta; interpolazione colore solo se `TypePoly >= 7` (POLY_GOURAUD di
-  svga.ash: qui gli indici COINCIDONO col confronto ASM, che è sul TypePoly
-  già tradotto da P_OB_ISO).
-- Edge DDA (EdgeGauche/EdgeDroite): riprodotti bit-exact i due loop
-  add/adc (sinistra) e sub/sbb (destra) inclusi l'"init carry"
-  (add/rcl/sub/shr), il seme frazionario `rem/2 + 7FFFh` (destra:
-  `-(rem/2) + 7FFFh`), l'entrata nel loop in base alla parità di deltaY
-  (deltaY+1 entry scritte), la direzione di store da DF (std sui rami
-  swappati). Intensità 8.8 con seme `rem_low_byte/2 ± 7Fh`.
-- Xmin/Xmax globali NON ricalcolati dopo il clip (solo Ymin/Ymax via
-  "rencadre"); edge orizzontali non scrivono nulla (poly piatti → FillVertic
-  legge tabelle stantie, quirk DOS fedele).
-- Sphere: midpoint a doppia coppia di righe, carry di `add ebp,edx` = il
-  passaggio a somma ≥ 0; path clippato con Ymin/Ymax che si restringono a
-  runtime e confronti di riga a 16 bit. `Ymin>=Ymax` → niente sfera.
-Da verificare pixel-perfect in priorità: EdgeDroite (catena sbb), i semi
-frazionari sulle righe swappate, ClipPolyEdge gouraud (resti idiv scartati).
+### s_poly.c (LIB_SVGA/S_POLY.ASM) — confidence MEDIUM/HIGH
+`ComputePoly/_A`, `ComputeSphere/_A` plus Sutherland-Hodgman clipping. Key
+points:
+- **TabPoly and TabPolyClip are contiguous** in a single array (97+96 WORDs):
+  the closing point (the `movsw/movsd` "transitivité") of a 32-point poly
+  overruns 2 words into TabPolyClip, exactly as it does on DOS.
+- The four ClipGauche/Droit/Haut/Bas are a single
+  `ClipPolyEdge(primIdx, bound, outsideIsGreater)` — in the ASM they are
+  identical bar the axis, bound and direction. The normalisation of the edge
+  direction before the idiv ("clip 2 poly collés") is kept; colour interpolation
+  happens only if `TypePoly >= 7` (POLY_GOURAUD of svga.ash: here the indices DO
+  match the ASM comparison, which is against the TypePoly already translated by
+  P_OB_ISO).
+- Edge DDA (EdgeGauche/EdgeDroite): the two add/adc (left) and sub/sbb (right)
+  loops are reproduced bit-exact, including the "init carry"
+  (add/rcl/sub/shr), the fractional seed `rem/2 + 7FFFh` (right:
+  `-(rem/2) + 7FFFh`), the loop entry depending on the parity of deltaY
+  (deltaY+1 entries written), and the store direction from DF (std on the
+  swapped branches). Intensity is 8.8 with the seed `rem_low_byte/2 ± 7Fh`.
+- The global Xmin/Xmax are NOT recomputed after clipping (only Ymin/Ymax, via
+  "rencadre"); horizontal edges write nothing (flat polys → FillVertic reads
+  stale tables, a faithful DOS quirk).
+- Sphere: midpoint over a double pair of rows, with the carry of `add ebp,edx`
+  marking the crossing to a sum ≥ 0; the clipped path has Ymin/Ymax narrowing
+  at runtime and 16-bit row comparisons. `Ymin>=Ymax` → no sphere.
+Still to verify pixel-perfect, in priority order: EdgeDroite (the sbb chain),
+the fractional seeds on swapped rows, ClipPolyEdge gouraud (discarded idiv
+remainders).
 
-### p_ob_iso.c (LIB_3D/P_OB_ISO.ASM) — confidenza MEDIA/ALTA
-`AffObjetIso`/`PatchObjet`. Flusso e buffer documentati in testa al file
-(riassunto per il tuning DS in fondo a queste note). Fedeltà:
-- record List_Entity gestiti SOLO a WORD (i vertex block sono allineati a 2,
-  non a 4: niente accessi dword disallineati su ARM); dati oggetto letti con
-  helper memcpy a 16 bit.
-- Poly: `sub cl,7` (flat→Triste/Tele) e `sub cl,2` (gouraud→7/8) sul SOLO
-  byte materia; colore gouraud per-vertice `add dl,ch` (byte basso della
-  intensità + coul1); backface cull col cross product 16×16→32 e confronto
-  sub/sbb esatto (64 bit in C); ZMax = max degli Zrot dei vertici.
-- Linee: colore **byte-swappato** (`xchg al,ah`) prima di Line_A; Z = max dei
-  due punti.
-- Sfere: coul letto con `mov ax,[esi+1]` (offset dispari! = byte1|byte2<<8,
-  ricomposto dai due WORD); raggio ISO `*34>>9`, 3D `imul/idiv` a 16 bit;
-  la box Screen si aggiorna anche per sfere poi respinte (fedele).
-- Sort "SergeSort" trasliterato 1:1 (quicksort con stack esplicito +
-  selection sort ≤8 + caso 2 elementi): l'ordine dei pari-Z è parte del
-  risultato visivo. Record = struct {WORD z; WORD type; WORD *ptr;} (8 byte
-  su ILP32 come su x86/ARM32).
-- Proiezione ISO: Xp=((x+zrot)*24>>9)+XCentre, Yp=((12(x-zrot)-30y)>>9)+YC,
-  Zsort=(zrot-x)-y su 16 bit; 3D: imul/idiv 64/32 con saturazioni
-  overX/overY/overZ (`shr 16 | 7FFF`) e overflow ebp≤0 → 0x7FFFFFFF.
-- **RotateNuage (oggetti statici, non-ANIM)**: l'ASM passa a Proj_ISO
-  registri con metà alte "sporche" (eax: upper di Y0, ebx: upper di Z0,
-  ebp: upper di x*LMat20 — il sorgente stesso dice "passer les param en
-  long !!!"). Riprodotto ESATTAMENTE ricomponendo i 32 bit. In LBA1 quasi
-  tutti i body sono INFO_ANIM, quindi il path è raro.
-- List_Normal resta 500 WORD ("surement plus" nel sorgente): modelli con
-  più normali sfonderebbero anche su DOS.
-Da verificare pixel-perfect: ordine di sort con Z uguali (già 1:1 ma è il
-punto più sensibile), il path statico, le sfere clippate.
+### p_ob_iso.c (LIB_3D/P_OB_ISO.ASM) — confidence MEDIUM/HIGH
+`AffObjetIso`/`PatchObjet`. The flow and the buffers are documented at the head
+of the file (summarised for DS tuning at the end of these notes). Fidelity:
+- List_Entity records are handled ONLY as WORDs (the vertex blocks are 2-aligned,
+  not 4: no unaligned dword access on ARM); object data is read through 16-bit
+  memcpy helpers.
+- Polys: `sub cl,7` (flat→Triste/Tele) and `sub cl,2` (gouraud→7/8) on the
+  material byte ONLY; per-vertex gouraud colour `add dl,ch` (low byte of the
+  intensity plus coul1); backface cull with the 16×16→32 cross product and the
+  exact sub/sbb comparison (64-bit in C); ZMax = the maximum of the vertices'
+  Zrot.
+- Lines: the colour is **byte-swapped** (`xchg al,ah`) before Line_A; Z = the
+  maximum of the two points.
+- Spheres: coul is read with `mov ax,[esi+1]` (an odd offset! = byte1|byte2<<8,
+  recomposed from the two WORDs); the ISO radius is `*34>>9`, the 3D one is a
+  16-bit `imul/idiv`; the Screen box is updated even for spheres that are
+  subsequently rejected (faithful).
+- The "SergeSort" is transliterated 1:1 (a quicksort with an explicit stack,
+  plus a selection sort for ≤8 and a two-element case): the ordering of equal-Z
+  records is part of the visual result. Record = struct {WORD z; WORD type;
+  WORD *ptr;} (8 bytes on ILP32, as on x86/ARM32).
+- ISO projection: Xp=((x+zrot)*24>>9)+XCentre, Yp=((12(x-zrot)-30y)>>9)+YC,
+  Zsort=(zrot-x)-y in 16 bits; 3D: 64/32 imul/idiv with the
+  overX/overY/overZ saturations (`shr 16 | 7FFF`) and the ebp≤0 overflow →
+  0x7FFFFFFF.
+- **RotateNuage (static, non-ANIM objects)**: the ASM passes Proj_ISO registers
+  whose upper halves are "dirty" (eax: the upper half of Y0, ebx: that of Z0,
+  ebp: that of x*LMat20 — the source itself says "passer les param en long !!!").
+  Reproduced EXACTLY, by recomposing the 32 bits. In LBA1 almost every body is
+  INFO_ANIM, so this path is rare.
+- List_Normal stays at 500 WORDs ("surement plus" in the source): models with
+  more normals would overrun on DOS too.
+Still to verify pixel-perfect: the sort order for equal Z (already 1:1, but it
+is the most sensitive point), the static path, and clipped spheres.
 
-### texture.c (TEXTURE.ASM) — confidenza ALTA (seed DDA MEDIA/ALTA)
-Rasterizzatore di triangoli texturati **affine** usato solo dall'holomap
+### texture.c (TEXTURE.ASM) — confidence HIGH (DDA seed MEDIUM/HIGH)
+An **affine** textured-triangle rasteriser, used only by the holomap
 (HOLOMAP.C: `AsmTexturedTriangleNoClip()` + `FillTextPolyNoClip(LYmin,LYmax,
-PtrMap)`). Tutto ciò che nell'ASM segue la direttiva `END` (M_FillTextPoly,
-M_AsmFillProp, disptexture, un secondo AsmTexturedTriangleNoClip) è dead code
-non tradotto; AsmFillProp/FillTextPoly/FillTextPolyShade/
-AsmGouraudTriangleNoClip sono vivi ma senza chiamanti C: tradotti fedeli per
-completezza. Punti chiave:
-- **Tabelle edge**: nell'ASM sono un blocco contiguo indirizzato da
-  `TabGauche + 960*n`; qui si mappano sugli array di s_poly.c con l'aliasing
-  del layout originale: TabGauche=TabVerticG, TabDroite=TabVerticD,
-  TabX0=TabCoulG, TabY0=TabCoulD, più TabX1/TabY1 (già previsti in lib3d_p.h).
-- **Edge DDA (A_FillPropNoClip)**: quoziente 16.16 `(delta16<<16)/deltay`
-  ruotato (`rol edx,16`), un solo `adc/sbb eax,edx` a 32 bit per entry: la
-  frazione vive nella high word e il suo overflow raggiunge la X solo via CF
-  all'iterazione successiva (e un wrap della X carica la frazione) — catena
-  riprodotta esatta con `unsigned long long`. Seme frazionario
-  `rem/2 + 7FFFh` nelle entry NoClip, **rem nudo** in AsmFillProp (shr/add
-  commentati nell'ASM). deltay+1 entry scritte; deltay==0 nei FillProp =
-  divisione per zero come su DOS (i triangle builder chiamano solo con Y
-  strettamente diversi).
-- **Triangle builder**: coordinate lette con **movzx** (X negative
-  diventerebbero 32000+); LYmin/LYmax aggiornati con <=/>= e solo dagli edge
-  non orizzontali → triangolo tutto orizzontale lascia 32000/-32000
-  (TestVuePoly in HOLOMAP.C rigetta prima). Non chiama il filler: è
-  HOLOMAP.C a concatenare FillTextPolyNoClip.
-- **Filler**: per riga `xstep=(u1-u0+1)/len`, `ystep=(v1-v0+1)/len` (+1 su
-  entrambi i numeratori, idiv troncato); accumulatori u/v **8.8 a 16 bit**
-  con step troncati alla low word; texel = `map[(v&FF00h)|(u>>8)]` → wrap
-  256x256 gratuito. Quirk: NoClip disegna `xd-xg` pixel, le varianti clippate
-  `min(xd,ClipXmax)-max(xg,ClipXmin)+1` (un pixel in PIÙ a parità di span);
-  il clip sinistro riscrive TabX0/TabY0 (TabCoulG/D) **in place** con
-  prodotti imul a 16 bit; contatori riga/pixel a 16 bit (0 → 65536 iter);
-  stride 640 hardcoded. FillTextPolyShade: nibble basso −dark con clamp alla
-  base della ramp (palette a 16 rampe di 16), bit alti preservati.
-- AsmFillProp confronta i bound con load a 32 bit (su DOS ClipYmin/max sono
-  dd): qui i WORD del port sono allargati — identico per i valori 0..479.
-Verificato: build SDL pulita, holomap in-game col pianeta Twinsun texturato
-(continenti/oceani riconoscibili, wrapping corretto ai poli, rotazione con
-frecce). Da verificare pixel-perfect in priorità: seme frazionario del DDA
-sugli edge destri (sbb) e le righe con len==1.
+PtrMap)`). Everything that follows the `END` directive in the ASM
+(M_FillTextPoly, M_AsmFillProp, disptexture, a second
+AsmTexturedTriangleNoClip) is dead code and was not translated;
+AsmFillProp/FillTextPoly/FillTextPolyShade/AsmGouraudTriangleNoClip are live
+but have no C callers — translated faithfully for completeness. Key points:
+- **Edge tables**: in the ASM they are one contiguous block addressed as
+  `TabGauche + 960*n`; here they map onto the s_poly.c arrays with the original
+  layout's aliasing: TabGauche=TabVerticG, TabDroite=TabVerticD,
+  TabX0=TabCoulG, TabY0=TabCoulD, plus TabX1/TabY1 (already provided for in
+  lib3d_p.h).
+- **Edge DDA (A_FillPropNoClip)**: a 16.16 quotient `(delta16<<16)/deltay`
+  rotated (`rol edx,16`), with a single 32-bit `adc/sbb eax,edx` per entry: the
+  fraction lives in the high word and its overflow reaches X only through CF on
+  the following iteration (and a wrap of X loads the fraction) — the chain is
+  reproduced exactly with `unsigned long long`. The fractional seed is
+  `rem/2 + 7FFFh` in the NoClip entries and **the bare remainder** in
+  AsmFillProp (the shr/add are commented out in the ASM). deltay+1 entries are
+  written; deltay==0 in the FillProps is a division by zero, as on DOS (the
+  triangle builders only ever call with strictly different Ys).
+- **Triangle builder**: coordinates are read with **movzx** (negative Xs would
+  become 32000+); LYmin/LYmax are updated with <=/>= and only from
+  non-horizontal edges → an entirely horizontal triangle leaves 32000/-32000
+  (TestVuePoly in HOLOMAP.C rejects it first). It does not call the filler: it
+  is HOLOMAP.C that chains FillTextPolyNoClip.
+- **Filler**: per row, `xstep=(u1-u0+1)/len`, `ystep=(v1-v0+1)/len` (+1 on both
+  numerators, truncating idiv); the u/v accumulators are **8.8 in 16 bits** with
+  the steps truncated to the low word; texel = `map[(v&FF00h)|(u>>8)]` → 256x256
+  wrapping for free. Quirk: NoClip draws `xd-xg` pixels while the clipped
+  variants draw `min(xd,ClipXmax)-max(xg,ClipXmin)+1` (one pixel MORE for the
+  same span); the left clip rewrites TabX0/TabY0 (TabCoulG/D) **in place** with
+  16-bit imul products; the row/pixel counters are 16-bit (0 → 65536
+  iterations); stride 640 is hardcoded. FillTextPolyShade: the low nibble is
+  darkened with a clamp at the base of the ramp (a palette of 16 ramps of 16),
+  preserving the high bits.
+- AsmFillProp compares the bounds with 32-bit loads (on DOS ClipYmin/max are
+  dd): here the port's WORDs are widened — identical for values 0..479.
+Verified: clean SDL build, in-game holomap with the planet Twinsun textured
+(recognisable continents and oceans, correct wrapping at the poles, rotation
+with the arrow keys). Still to verify pixel-perfect, in priority order: the
+DDA's fractional seed on the right-hand edges (sbb), and rows with len==1.
 
-## Note per il porting DS (P_OB_ISO)
+## Notes for the DS port (P_OB_ISO)
 
-Dati caldi (candidati DTCM): List_Anim_Point/List_Point (3KB ciascuno),
-List_Normal (1KB), TabMat (1.1KB), List_Tri (4KB), TabVerticG/D+TabCoulG/D
-(3.8KB); List_Entity (10KB) probabilmente troppo grande → main RAM.
-Codice caldo (candidati ITCM): RotList/TransRotList, i due loop di
-proiezione, EdgeGauche/EdgeDroite, i filler di s_fillv.c, SergeSort.
+Hot data (DTCM candidates): List_Anim_Point/List_Point (3 KB each),
+List_Normal (1 KB), TabMat (1.1 KB), List_Tri (4 KB), TabVerticG/D+TabCoulG/D
+(3.8 KB); List_Entity (10 KB) is probably too large → main RAM.
+Hot code (ITCM candidates): RotList/TransRotList, the two projection loops,
+EdgeGauche/EdgeDroite, the s_fillv.c fillers, SergeSort.
 
-## Verifica effettuata
+## Verification performed
 
-`gcc -fsyntax-only -std=c99 -Wall -Wextra -fsigned-char` e `-std=c90 -pedantic`:
-tutti i 12 file puliti (mingw32). Nessun test di esecuzione ancora: serve il
-harness di confronto pixel-perfect (framebuffer 640x480 + TabOffLine lineare).
+`gcc -fsyntax-only -std=c99 -Wall -Wextra -fsigned-char` and
+`-std=c90 -pedantic`: all twelve files clean (mingw32). No execution test yet:
+that needs the pixel-perfect comparison harness (640x480 framebuffer plus a
+linear TabOffLine).
 
-Sessione P_TRIGO/S_POLY/P_OB_ISO: build mingw32 pulita, smoke test in-game
-(prima scena LBA1): Twinsen e gli altri attori (dottori, clone che spazza,
-robot) renderizzati correttamente — proporzioni, gouraud, linee (cavo del
-microfono), ombre. Non ancora confrontati pixel-perfect col DOS.
+P_TRIGO/S_POLY/P_OB_ISO session: clean mingw32 build, in-game smoke test (the
+first LBA1 scene): Twinsen and the other actors (the doctors, the sweeping
+clone, the robot) render correctly — proportions, gouraud, lines (the
+microphone cable), shadows. Not yet compared pixel-perfect against DOS.
 
-## Pattern utili per S_POLY / TEXTURE / P_OB_ISO (sessioni future)
+## Useful patterns for S_POLY / TEXTURE / P_OB_ISO (future sessions)
 
-(Sezione storica: TEXTURE è stato tradotto — campagna completa 16/16.)
+(Historical section: TEXTURE has since been translated — the campaign is
+complete, 16/16.)
 
-- Convenzione: i `proc` con parametri stack (`.model SYSCALL`) mappano 1:1 sulla
-  dichiarazione C in LIB_SVGA.H; gli entry "register-based" (`Line_A`: eax,ebx,
-  ecx,edx,ebp; `FillVertic_A`: ecx=tipo, edi=colore) sono stati esposti come
-  normali funzioni C con quei parametri in ordine: P_OB_ISO li chiamerà così.
-- Globals ricorrenti: `Log`, `TabOffLine` (array via `&`), `Screen_X`,
-  `ClipXmin/Ymin/Xmax/Ymax` (clip inclusivo), tabelle poly
-  `Ymin/Ymax/TabVerticG/D/TabCoulG/D` (16 bit, intensità 8.8).
-- 640 hardcoded ovunque nel path poly/line/zoom; `Screen_X` nei blitter rect.
-- I contatori loop sono spesso a 8/16 bit: attenzione ai wrap (fedeltà!).
-- `rep stosw` con `jnc/stosb` = riempimento a coppie + byte dispari (nessun
-  effetto di allineamento reale); `test edi,1` iniziale invece dipende dalla
-  parità dell'indirizzo → parità di x se Log è pari.
+- Convention: `proc`s with stack parameters (`.model SYSCALL`) map 1:1 onto the
+  C declaration in LIB_SVGA.H; the "register-based" entry points (`Line_A`:
+  eax,ebx,ecx,edx,ebp; `FillVertic_A`: ecx=type, edi=colour) were exposed as
+  ordinary C functions taking those parameters in that order — P_OB_ISO will
+  call them that way.
+- Recurring globals: `Log`, `TabOffLine` (an array, via `&`), `Screen_X`,
+  `ClipXmin/Ymin/Xmax/Ymax` (inclusive clipping), and the poly tables
+  `Ymin/Ymax/TabVerticG/D/TabCoulG/D` (16-bit, intensity 8.8).
+- 640 is hardcoded throughout the poly/line/zoom path; `Screen_X` is used in the
+  rectangle blitters.
+- Loop counters are often 8- or 16-bit: mind the wraps (fidelity!).
+- `rep stosw` with `jnc/stosb` = filling in pairs plus an odd byte (no real
+  alignment effect); the initial `test edi,1`, on the other hand, depends on the
+  parity of the address → the parity of x, if Log is even.
