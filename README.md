@@ -38,7 +38,8 @@ contents.
 
 All three scripts take the path to your install — the directory containing
 `Speedrun/` and `Common/` — as an argument, or read it from `$LBA1_ASSETS`.
-Run them from the repository root:
+Run them, and everything else in this file, from the repository root
+(`ds-lba/`):
 
 ```sh
 export LBA1_ASSETS="/path/to/Little Big Adventure"
