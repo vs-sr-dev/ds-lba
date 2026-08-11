@@ -1,4 +1,26 @@
-# PORTING_NOTES_NDS — LBA1 on the Nintendo DS (M4 bring-up)
+# PORTING_NOTES_NDS — LBA1 on the Nintendo DS
+
+## Current state (2026-08-11)
+
+Most of this file is a set of session logs, kept in the order they were
+written: each records how a subsystem was built and what was measured at the
+time. That makes it useful and slightly dangerous — a measurement from bring-up
+is not a description of the ROM you build today. Where a later session overtook
+a section, it now says so in place.
+
+The short version:
+
+- The game has been **played through to the end** (build 10, on melonDS). Real
+  hardware — a 3DS in DS mode — runs the same code, verified through the
+  opening hours.
+- Everything the old TODO list called a stub is done: holomap, touch UI, audio,
+  music, savegames, multi-language. That section has been rewritten to say what
+  is genuinely left.
+- The bugs found between bring-up and that playthrough — and what they
+  generalise to for anyone moving 1994 code onto an ARM — are in
+  [`../../DEVLOG.md`](../../DEVLOG.md).
+
+## M4 bring-up snapshot
 
 State at the end of the session: **lba1ds.nds boots on melonDS and reaches the
 FIRST GAMEPLAY SCENE** — Adeline logo → EA bumper → main menu (navigable) → New
@@ -165,12 +187,27 @@ ARM9 binary (thumb, -O2, gc-sections): text 287K + data 13K + bss 114K =
 | BufText/InvObj/minor | ~80 |
 | **Heap total** | **~2090** |
 
-Steady-state spare: **~1.5 MB** (fake_heap_end − sbrk). Verdict: **the game
-fits a plain 4 MB DS with no cuts and no DSi mode**, with room for audio
-(SampleMem min 200K if and when Wave_Driver_Enable becomes true) and for the
-holomap buffer. `Malloc(-1)`→0 already makes the engine use the minimums
-(SpriteMem 50K/SampleMem 200K/AnimMem 100K). No VOX/FLA in the nitroFS (the
-.nds is 9.6 MB of core HQRs alone).
+Steady-state spare at bring-up: **~1.5 MB** (fake_heap_end − sbrk). The verdict
+still holds: **the game fits a plain 4 MB DS with no cuts and no DSi mode**.
+
+**Overtaken since (build 4).** The two rows above marked "min" were the symptom
+of a bug, not a budget. `Malloc(-1)` is a stub that returns 0, so PERSO.C sized
+every pool as a fraction of zero and all of them fell to their clamped floors —
+and because eviction *compacts* the pool, any pointer a caller was still
+holding started pointing at other data. That single stub produced missing 3D
+objects, lost animations, text advancing one letter per keypress and gurus in
+three unrelated functions; the full story is in
+[`../../DEVLOG.md`](../../DEVLOG.md), §5.
+
+The pools are now sized from the measured archives, under `#ifdef PORT_NDS`:
+`NDS_ANIM_MEM` 460000 (431 KB of data, 517 entries), `NDS_SPRITE_MEM` 300000
+(286 KB, 119 entries), InventoryObj 64000 (57 KB) — roughly 650 KB more heap,
+in exchange for zero eviction. Samples keep the floor: 3.4 MB will never be
+resident on a 4 MB machine, and the SFX have their own LRU pool in nds_audio.c.
+The shipping ROM also carries two voice banks, so the .nds is 17.8 MB rather
+than 9.6 MB, and the measured heap after init is now `use=3071K top=380K` —
+a far tighter margin than the 1.5 MB above, and the number to watch before
+adding anything else.
 
 ## Performance (optimisation session — measured on melonDS at full speed)
 
@@ -564,10 +601,17 @@ engine polls `IsMidiPlaying()`. `MUS_LOOP 1` to go back to a seamless loop.
 sites (AMBIANCE.C:424, AMBIANCE.C:485, PLAYFLA.C:310) do `NumXmi = num`
 immediately before. So our `PlayMidi()` reads that global: **zero engine
 edits**. `Midi_Driver_Enable = 1` in stubs.c is the switch (ADELINE.C never
-assigns it — on DOS A32MT32.DLL exported it); as a consequence PERSO.C:1485
-loads `HQR_Midi` and **`midi_mi.hqr` must be in the nitroFS** (LBA.CFG says
-`MidiType: Midi` → `MidiFM=0` → midi_mi, not midi_sb), because
-`PlayMidiFile()` dereferences it — we ignore the XMI bytes themselves.
+assigns it — on DOS A32MT32.DLL exported it).
+
+**Overtaken since (build 3): `midi_mi.hqr` is NOT in the nitroFS.** It used to
+be, because `Midi_Driver_Enable` also makes PERSO.C:1485 claim `HQR_Midi`, and
+`PlayMidiFile()` dereferences it. But we never read a byte of XMI, so the
+resource was 32000 + RECOVER_AREA of pure waste — and worse, it is claimed
+*before* the `Malloc(-1)` probe that sizes SpriteMem/AnimMem/SampleMem, so
+loading it shrank all three pools (see the RAM section). Now `HQR_Midi = 0`
+under `#ifdef PORT_NDS` and the three `HQR_Get(HQR_Midi, …)` call sites are
+guarded with `HQR_Midi ? … : 0`; the jingles still work, because they are gated
+on `Midi_Driver_Enable`, not on the resource.
 
 Fades (`FadeMidiDown/Up`) are asynchronous on the same thread, through
 `soundChSetVolume`.
@@ -820,23 +864,69 @@ return a freeable `calloc(1,1)` (edit #32). Headless repro:
 
 ## Open items / TODO
 
-- **Savegames**: DONE on fat:/ (see "## Savegames on fat:/"). Remaining: BYOA
-  for the assets from the SD (today only the saves; the extra VOX files could be
-  read from fat:/lba1/ with the same routing technique).
-- **Audio**: DONE (SFX + voices, see "## ARM7/calico audio"; area music +
-  jingles, see "## Music"; complete VOX + the language selector, see
-  "## Multi-language"). **To be checked**: the music and the multi-language
-  support have never been tried yet, neither on melonDS nor on hardware.
-- **Holomap**: TEXTURE.ASM still a stub (as on SDL).
-- **Residual unaligned accesses**: the Info/Info1 pun is FIXED (edit #33, see
-  "## Freeze dossier"); HOLOMAP.C still needs another look when the holomap is
-  done.
-- **MCGA path** (FLA/SceZoom): implemented (present-from-Phys in the VBlank) but
-  never exercised (no .FLA files are shipped).
-- **Touch UI / second screen**: for now the debug console; no touch.
+Rewritten 2026-08-11. Everything the previous version of this list called a
+stub — the holomap, the touch UI, audio, music, multi-language, savegames — has
+since been built and is documented in its own section above. What follows is
+what is actually left.
+
+### Verification, not code
+
+- **A complete playthrough on real hardware.** The end-to-end run was on
+  melonDS; a 3DS in DS mode has only been exercised through the opening hours.
+  This is the stated criterion for tagging 1.0.
+- **Music and the language selector have never been soaked.** They work, and
+  the SD was present for the complete playthrough, but nobody has deliberately
+  listened for clicks at the buffer halves, for dropouts when the music thread
+  competes with a full redraw, or played a long session in French or Italian.
+  The non-English text path in particular was a minefield until the signed-char
+  fix (DEVLOG §7) and has had almost no exposure since.
+- **Pixel-perfect comparison of the translated ASM against LBADC.EXE in
+  DOSBox.** Still not done. The priorities are listed at the end of each module
+  in `../../translate/TRANSLATION_NOTES.md` — EdgeDroite's sbb chain,
+  SergeSort's tie order, the clipped mask/graph paths, s_fillv's Dith and
+  Gouraud fillers.
+- **HOLOMAP.C has never had the systematic unaligned-access audit** the rest of
+  engine/ got. The holomap renders correctly in game, which is evidence but not
+  proof; it was on the list when the holomap was still a stub, and it stayed
+  there.
+- **Expect more crashes.** Eight latent defects of the 1994 code surfaced
+  between bring-up and the complete playthrough, all of them invisible on x86.
+  There is no reason to think the supply is exhausted — see DEVLOG.md for the
+  shapes they take and for how to read a guru screen.
+
+### Known gaps
+
+- **No FLA cutscenes.** They live inside the CD image, not in the DOS data
+  directory, so they are not shipped. The MCGA present-from-Phys path exists
+  and is correct in principle, but it has never been exercised — the first
+  .FLA that runs will be its first test. (`HQM_Free`, reachable only from the
+  end of a cutscene, has a fix that has therefore never executed.)
+- **No loading screen**, and the first load on a real card is noticeably slower
+  than on an emulator (card reads plus LZSS decompression). Read-ahead or DMA
+  from the card is the obvious lever.
 - `GetMouseDep`/mouse = zeros: the menus work from keyboard/pad.
 - FICHE.C had a `GET_WORD` of its own: converted, but the "fiche" file (the
   character sheet, K_F?) has not been exercised thoroughly.
-- The guard heap and the [MEM]/[FIO] logs are ACTIVE in the final build too:
-  they cost little and are gold for debugging; remove `PORT_HeapCheck` for a
-  "release" build when the optimisation pass happens.
+- `MAX_FILE_VOICE` is 42 and we enumerate 36 voice banks. It fits; it stops
+  fitting if another language is added.
+
+### Deliberate, not oversights
+
+- The guard heap and the `[MEM]`/`[FIO]`/`[HQR]`/`[FNT]`/`[ANM]` logs are ACTIVE
+  in the shipping build. They cost little and they are what turns a player's
+  crash into a fixable report — the voice-bank handle leak and the accented
+  character were both caught this way. Drop `PORT_HeapCheck` only if a
+  measurement ever shows it mattering.
+- The pools are deliberately oversized (see the RAM section): ~650 KB of heap
+  bought total residency for sprites and animations. If "NOT ENOUGH MEMORY"
+  ever appears at boot, `NDS_ANIM_MEM`/`NDS_SPRITE_MEM` are the knobs, and the
+  A/B build that proved RAM pressure was *not* behind the collision bugs is
+  worth repeating before turning them down.
+
+### Performance, if it is ever wanted
+
+The full grid redraw is still ~235 ms, one frame per screen-edge crossing. It
+is a visible hitch, not a slideshow, and nobody has complained about it — but
+if it is ever worth attacking, the order of expected return is in "Final state
+/ remaining headroom" above: incremental AffGrille first, then inlining
+AffGraph's RLE copy.
