@@ -1,153 +1,157 @@
-# PORTING_NOTES_NDS — LBA1 su Nintendo DS (M4 bring-up)
+# PORTING_NOTES_NDS — LBA1 on the Nintendo DS (M4 bring-up)
 
-Stato a fine sessione: **lba1ds.nds boota su melonDS e arriva alla PRIMA SCENA
-DI GIOCO** — logo Adeline → bumper EA → menu principale (navigabile) → New
-Game → pagine di intro (testo typewriter su immagini Twinsun) → cella di
-Twinsen renderizzata (brick iso + modello 3D) — stabile per minuti. Dopo la
-sessione performance (vedi "## Performance"): **50 fps (cap tick-lock) nel
-gameplay incrementale** con ~6.5 ms per attore 3D; il full-redraw della
-griglia (scroll camera / cambio cubo) resta un hitch da ~235 ms a botta.
-**Salvataggi PERSISTENTI su SD** (sessione savegame: libfat + routing in
-nds_sys.c, vedi "## Savegame su fat:/"): i save vanno in `fat:/lba1/save/`.
-L'holomap ora esiste (translate/texture.c, sessione parallela).
-**Audio: SFX + voci VOX funzionanti** (sessione audio, vedi
-"## Audio ARM7/calico"). **Musica d'area + jingle** in streaming dalla SD
-(vedi "## Musica") — scritta, compilata, **ancora da collaudare a orecchio**.
+State at the end of the session: **lba1ds.nds boots on melonDS and reaches the
+FIRST GAMEPLAY SCENE** — Adeline logo → EA bumper → main menu (navigable) → New
+Game → intro pages (typewriter text over Twinsun images) → Twinsen's cell
+rendered (iso bricks + 3D model) — stable for minutes. After the performance
+session (see "## Performance"): **50 fps (tick-lock cap) in incremental
+gameplay** at ~6.5 ms per 3D actor; the full grid redraw (camera scroll / cube
+change) remains a hitch of ~235 ms a time.
+**Savegames PERSIST on SD** (savegame session: libfat + routing in nds_sys.c,
+see "## Savegames on fat:/"): saves go to `fat:/lba1/save/`.
+The holomap now exists (translate/texture.c, parallel session).
+**Audio: SFX + VOX voices working** (audio session, see
+"## ARM7/calico audio"). **Area music + jingles** streamed from the SD
+(see "## Music") — written, compiled, **still to be checked by ear**.
 
-Gli edit a engine/ fatti in questa sessione sono loggati in
-`platform/sdl/PORTING_NOTES.md`, sezione "Edit per NDS" (#12-28): il grosso è
-la campagna **accessi disallineati** (ARMv5TE non trappa: un load 16/32-bit a
-indirizzo dispari ritorna dati ruotati — su x86 tutto funzionava). Build SDL
-riverificata verde + smoke test PC ok dopo gli edit.
+The engine/ edits made in this session are logged in
+`platform/sdl/PORTING_NOTES.md`, section "Edit per NDS" (#12-28): most of it is
+the **unaligned access** campaign (ARMv5TE does not trap: a 16/32-bit load at an
+odd address returns rotated data — on x86 everything worked). SDL build
+re-verified green + PC smoke test OK after the edits.
 
-## Comandi
+## Commands
 
 ```powershell
-# build (Docker devkitARM, immagine calico-based)
+# build (Docker devkitARM, calico-based image)
 docker run --rm -v ${PWD}:/work -w /work/platform/nds devkitpro/devkitarm:latest make -j8
 
 # run
 <melonDS>\melonDS.exe <repo>\platform\nds\lba1ds.nds
 
-# build SDL di controllo (obbligatoria dopo ogni edit a engine/)
+# control SDL build (mandatory after every edit to engine/)
 $env:PATH = 'C:\msys64\mingw32\bin;C:\msys64\usr\bin;' + $env:PATH
 make -C <repo>\platform\sdl -j8
 ```
 
-Smoke test non interattivo (harness): `autoenter` = N secondi di pulse Return
-ogni ~0.7s (equivalente di LBA_AUTOENTER dello shim SDL); `autopause` = N → a
-N secondi dal boot tiene premuto START ~0.4s (repro headless menu pausa);
-`autowalk` = N secondi di UP tenuto; `autosave` = N → a N secondi esegue la
-sequenza scriptata menu pausa → Save game → nome "DS" (4 impulsi Esc iniziali:
-un dialogo idle può mangiarne fino a 2); `autoload` = N → pulsa Esc (skip
-loghi) fino a N secondi, poi main menu → Continue → primo save della lista.
-**I file harness NON stanno più in nitrofiles/**: la ROM di default è pulita
-per costruzione (il Makefile ERRORE se ne trova uno in nitrofiles/); per una
-ROM strumentata usare `make diag DIAG_AUTOENTER=60 DIAG_AUTOSAVE=85` →
-`lba1ds_diag.nds` (stage in build/nitrofs_diag, vedi Makefile).
+Non-interactive smoke test (harness): `autoenter` = N seconds of Return pulses
+every ~0.7 s (the equivalent of the SDL shim's LBA_AUTOENTER); `autopause` = N →
+N seconds after boot, holds START for ~0.4 s (headless pause-menu repro);
+`autowalk` = N seconds of UP held; `autosave` = N → at N seconds runs the
+scripted sequence pause menu → Save game → name "DS" (4 initial Esc pulses: an
+idle dialogue can eat up to 2 of them); `autoload` = N → pulses Esc (skipping
+the logos) until N seconds, then main menu → Continue → first save in the list.
+**The harness files are no longer in nitrofiles/**: the default ROM is clean by
+construction (the Makefile ERRORS OUT if it finds one in nitrofiles/); for an
+instrumented ROM use `make diag DIAG_AUTOENTER=60 DIAG_AUTOSAVE=85` →
+`lba1ds_diag.nds` (staged in build/nitrofs_diag, see the Makefile).
 
-## Toolchain: ATTENZIONE, libnds nuova (calico)
+## Toolchain: CAREFUL, this is the new libnds (calico)
 
-`devkitpro/devkitarm:latest` è la libnds 2.x basata su **calico**:
-- compile: servono `-D__NDS__ -DARM9 -I$(CALICO)/include` oltre a libnds;
-- link: `-specs=$(DEVKITPRO)/calico/share/ds9.specs`, librerie
+`devkitpro/devkitarm:latest` is libnds 2.x, based on **calico**:
+- compile: you need `-D__NDS__ -DARM9 -I$(CALICO)/include` on top of libnds;
+- link: `-specs=$(DEVKITPRO)/calico/share/ds9.specs`, libraries
   `-lfilesystem -lfat -lnds9 -lcalico_ds9 -lm`;
-- ndstool: serve l'ARM7 esplicito `-7 $(CALICO)/bin/ds7_maine.elf`
-  (niente più default7 integrato);
-- API vecchie (timerStart, irqSet, consoleDemoInit, bgInit...) esistono ancora.
-- `pmMainLoop()`/`swiWaitForVBlank()` funzionano come da m2-hqrview.
+- ndstool: the ARM7 must be given explicitly, `-7 $(CALICO)/bin/ds7_maine.elf`
+  (there is no built-in default7 any more);
+- the old APIs (timerStart, irqSet, consoleDemoInit, bgInit…) still exist.
+- `pmMainLoop()`/`swiWaitForVBlank()` work as in m2-hqrview.
 
-Il Makefile replica le convenzioni SDL (gnu89 + watcom_compat force-included,
-`-x c`, `-fsigned-char -fcommon`, `-DCDROM -DPORT_NDS`, compat/inc) e in più fa
-**dependency tracking `-MMD`** (il Makefile SDL non lo fa: qui, cambiando
-watcom_compat.h, mezz'ora è andata in una build mista inconsistente).
+The Makefile mirrors the SDL conventions (gnu89 + force-included
+watcom_compat, `-x c`, `-fsigned-char -fcommon`, `-DCDROM -DPORT_NDS`,
+compat/inc) and additionally does **`-MMD` dependency tracking** (the SDL
+Makefile does not: here, changing watcom_compat.h once cost half an hour to an
+inconsistent mixed build).
 
-## Architettura platform/nds
+## platform/nds architecture
 
-- `main_nds.c` — defaultExceptionHandler (guru meditation con pc/registri al
-  posto dello schermo bianco: indispensabile), consoleDemoInit (console DS sul
-  sotto), nitroFSInit + `chdir("nitro:/")`, hook autoenter, chiama `lba_main`.
-- `nds_video.c` — video path di m2-hqrview: main engine MODE_5_2D, BG3
-  rotoscale bitmap 8bpp 512x256 in VRAM A.
-  - SVGA (gioco CD 640x480): `Flip`/`CopyBlockPhys[Clip]` decimano Log 2× al
-    volo (sample, non average) → 320x240 → scala hw a 256x192. Scritture VRAM
-    SOLO a u32 (VRAM ignora i byte write).
-  - MCGA (320x200: FLA/SceZoom): `Phys` è un buffer RAM di 64000 byte (il
-    codice engine `MCGA.C` ci fa memcpy dentro); il VBlank IRQ lo presenta
-    ogni frame. `CopyBlockPhysMCGA` (edit #14) scrive in `Phys`.
-  - Palette: quantizzazione DAC 6-bit fedele (>>2, re-espansa) poi >>3 →
-    BGR555 hardware, applicata subito ⇒ i fade funzionano senza re-blit.
+- `main_nds.c` — defaultExceptionHandler (a guru meditation with pc/registers
+  instead of a white screen: indispensable), consoleDemoInit (the DS console on
+  the bottom screen), nitroFSInit + `chdir("nitro:/")`, the autoenter hook,
+  then calls `lba_main`.
+- `nds_video.c` — the video path from m2-hqrview: main engine MODE_5_2D, BG3
+  rotoscale bitmap, 8bpp 512x256 in VRAM A.
+  - SVGA (the 640x480 CD game): `Flip`/`CopyBlockPhys[Clip]` decimate Log 2× on
+    the fly (sampling, not averaging) → 320x240 → hardware scale to 256x192.
+    VRAM writes ONLY as u32 (VRAM ignores byte writes).
+  - MCGA (320x200: FLA/SceZoom): `Phys` is a 64000-byte RAM buffer (the engine
+    code in `MCGA.C` memcpys into it); the VBlank IRQ presents it every frame.
+    `CopyBlockPhysMCGA` (edit #14) writes into `Phys`.
+  - Palette: faithful 6-bit DAC quantisation (>>2, re-expanded) then >>3 →
+    hardware BGR555, applied immediately ⇒ fades work without a re-blit.
   - `Vsync()` = swiWaitForVBlank.
-- `nds_sys.c` — timer hardware 2 a **50.005 Hz** (bus/256/2618, MAI il VBlank
-  a 59.83) che incrementa TimerRef/TimerSystem con la logica esatta di
-  TIMER_A.C (solo ++ relativi: RestoreTimer riavvolge TimerRef). Input su
+- `nds_sys.c` — hardware timer 2 at **50.005 Hz** (bus/256/2618, NEVER the
+  VBlank at 59.83) incrementing TimerRef/TimerSystem with the exact logic of
+  TIMER_A.C (relative ++ only: RestoreTimer rewinds TimerRef). Input on the
   VBlank IRQ (scanKeys): dpad→Joy(1/2/4/8), B→Fire1(space), A→Fire2(return),
-  **L→Fire4(ctrl)+Key=0x1D** (= CTRL DOS: tieni L per il pannello behaviour
-  classico, scegli col dpad), SELECT→Fire8(alt), **X/Y/R→behaviour diretto
-  Normal/Sporty/Aggressive** via PORT_TouchComportement (Discreto: touch o
-  pannello L), START→Key=1(Esc); GetAscii ring buffer stile int16h
-  (A=0x1C0D, B=0x3920, START=0x011B). NB: la mappa X/Y/L/R→FuncKey F1-F4
-  del bring-up era codice morto (l'engine non legge mai FuncKey).
-  Mouse: stub. DosMalloc→calloc contabilizzato.
-- `stubs.c` / `asm_stubs.c` — COPIE degli stub SDL (non condivisi). Dalla
-  sessione audio stubs.c copre solo MIDI+CD+DLL: Wave e Mixer sono reali in
+  **L→Fire4(ctrl)+Key=0x1D** (= the DOS CTRL: hold L for the classic behaviour
+  panel, choose with the dpad), SELECT→Fire8(alt), **X/Y/R→direct behaviour
+  Normal/Sporty/Aggressive** through PORT_TouchComportement (Discreet: touch or
+  the L panel), START→Key=1(Esc); GetAscii is an int16h-style ring buffer
+  (A=0x1C0D, B=0x3920, START=0x011B). NB: the bring-up's X/Y/L/R→FuncKey F1-F4
+  map was dead code (the engine never reads FuncKey).
+  Mouse: stub. DosMalloc→accounted calloc.
+- `stubs.c` / `asm_stubs.c` — COPIES of the SDL stubs (not shared). Since the
+  audio session, stubs.c covers only MIDI+CD+DLL: Wave and Mixer are real, in
   `nds_audio.c`.
-- `watcom_compat.h` (variante NDS) — oltre a uccidere le keyword Watcom:
-  `stricmp/strcmpi/strnicmp→strcasecmp` (dichiarati a mano: <strings.h> di
-  newlib esporta `index()` che collide con le variabili `index` di GIF.C/PCX.C
-  → si include <string.h> e poi `#define index lba1_index`), `_MAX_*`, e i
-  **wrapper stdio/heap** (sotto).
-- `compat_nds/` — `process.h` (spawnl→-1) e `direct.h` (→unistd.h) che newlib
-  non ha; `compat/` = copia dei wrapper `../LIB386/...` dello shim SDL.
+- `watcom_compat.h` (NDS variant) — besides killing the Watcom keywords:
+  `stricmp/strcmpi/strnicmp→strcasecmp` (declared by hand: newlib's
+  <strings.h> exports `index()`, which collides with the `index` variables in
+  GIF.C/PCX.C → include <string.h> and then `#define index lba1_index`),
+  `_MAX_*`, and the **stdio/heap wrappers** (below).
+- `compat_nds/` — `process.h` (spawnl→-1) and `direct.h` (→unistd.h), which
+  newlib lacks; `compat/` = a copy of the SDL shim's `../LIB386/...` wrappers.
 
-### Wrapper stdio (msvcrt-emulation) — nds_sys.c
+### stdio wrappers (msvcrt emulation) — nds_sys.c
 
-L'engine passa FILE* NULL/stantii a fseek/fread in vari punti (su DOS/msvcrt
-la libc valida i parametri e fallisce garbata; newlib fa data abort). La
-variante NDS di watcom_compat.h rimappa nei soli TU engine:
-`fopen/fclose/fread/fwrite/fseek/ftell` → `NDS_*` con un registro dei FILE*
-aperti (16 slot): handle non registrato ⇒ log `[FIO]` + errore soft.
-`NDS_fopen` inoltre normalizza i path: salta `.\`, `\`→`/`, **lowercase**
-(i file in nitrofiles/ sono tutti lowercase), cwd = nitro:/. Le write su
-nitroFS falliscono ⇒ `Save()`/`Def_WriteString` ritornano FALSE, non fatale
-(savegame: vedi Aperti).
+The engine passes NULL/stale FILE*s to fseek/fread in several places (on
+DOS/msvcrt the libc validates its parameters and fails gracefully; newlib data
+aborts). The NDS variant of watcom_compat.h remaps, in engine TUs only:
+`fopen/fclose/fread/fwrite/fseek/ftell` → `NDS_*` with a registry of open
+FILE*s (16 slots): an unregistered handle ⇒ a `[FIO]` log plus a soft error.
+`NDS_fopen` also normalises paths: it skips `.\`, turns `\` into `/`, and
+**lowercases** (everything in nitrofiles/ is lowercase); cwd = nitro:/. Writes
+to nitroFS fail ⇒ `Save()`/`Def_WriteString` return FALSE, which is not fatal
+(savegames: see Open items).
 
-### Heap strumentato — nds_sys.c
+### Instrumented heap — nds_sys.c
 
-`malloc/calloc/realloc/free` engine → wrapper con header 16B + canary di coda
-4B + lista dei blocchi vivi: ogni alloc logga `[MEM]` se ≥32KB (con totale e
-spare) e fa `PORT_HeapCheck()` (verifica tutti i canary → `[HEAP] OVERFLOW
-after N-byte block` al momento del danno). **`NDS_realloc` con shrink è
-IN-PLACE obbligatoriamente**: `Mshrink`/`LoadMalloc_HQR` ignorano il valore di
-ritorno (un realloc che sposta lascia PtrPal/LbaFont dangling — successo così).
-I wrapper valgono solo per i TU engine: FILE structs e allocazioni newlib
-restano fuori (per questo il canary non aveva beccato l'overflow di BufOrder
-— trovato invece ragionando sui margini LZS, edit #19).
+Engine `malloc/calloc/realloc/free` → wrappers with a 16-byte header, a 4-byte
+tail canary and a list of live blocks: every allocation logs `[MEM]` if ≥32 KB
+(with the total and the spare) and runs `PORT_HeapCheck()` (verifying every
+canary → `[HEAP] OVERFLOW after N-byte block` at the moment of the damage).
+**`NDS_realloc` with a shrink MUST be IN-PLACE**: `Mshrink`/`LoadMalloc_HQR`
+ignore the return value (a realloc that moves leaves PtrPal/LbaFont dangling —
+which is exactly what happened). The wrappers apply to engine TUs only: FILE
+structs and newlib's own allocations stay outside (which is why the canary
+never caught the BufOrder overflow — that was found by reasoning about the LZS
+margins instead, edit #19).
 
-## Bug-hunt della sessione (per il prossimo che tocca un target nuovo)
+## This session's bug hunt (for whoever tackles a new target next)
 
-1. **Schermo bianco totale** = crash prima/nella console init → mettere SEMPRE
-   `defaultExceptionHandler()` come prima riga: la guru meditation con pc/addr
-   + addr2line sul .elf risolve in un minuto. Primo crash: `fopen(NULL)` da
-   `FileSize(getenv("ADELINE"))`.
-2. **Immagini garbage con logica giusta** = `Expand()` leggeva i token LZ a
-   UWORD da offset dispari (#15). Se succede di nuovo su altro target: è
-   SEMPRE l'allineamento.
-3. **Heap corruption deterministica** (FILE struct piena di byte ASCII):
-   `Load_HQR` scrive fino a `SizeFile+500` nel buffer destinazione (il
-   compresso viene copiato in coda e decompresso in-place). OGNI buffer dest
-   deve avere +500 (#19). `Screen` ce l'ha ("+ decomp marge"), BufOrder no.
-4. **Scena garbage + write selvagge**: DecompColonne (#27) — length RLE letta
-   disallineata → scrive oltre BufCube.
-5. Makefile senza `-MMD` + edit agli header force-included = build mista
-   silenziosamente incoerente. Ora c'è il dependency tracking.
+1. **A completely white screen** = a crash before or inside the console init →
+   ALWAYS put `defaultExceptionHandler()` on the first line: the guru meditation
+   with pc/addr plus addr2line on the .elf solves it in a minute. First crash:
+   `fopen(NULL)` from `FileSize(getenv("ADELINE"))`.
+2. **Garbage images with correct logic** = `Expand()` was reading its LZ tokens
+   as UWORDs from odd offsets (#15). If this happens again on another target:
+   it is ALWAYS alignment.
+3. **Deterministic heap corruption** (a FILE struct full of ASCII bytes):
+   `Load_HQR` writes up to `SizeFile+500` into the destination buffer (the
+   compressed data is copied to the tail and decompressed in place). EVERY
+   destination buffer needs that +500 (#19). `Screen` has it ("+ decomp
+   marge"), BufOrder did not.
+4. **Garbage scene + wild writes**: DecompColonne (#27) — an RLE length read
+   unaligned → writes past BufCube.
+5. A Makefile without `-MMD` plus edits to force-included headers = a silently
+   inconsistent mixed build. Dependency tracking is in place now.
 
-## RAM — breakdown e verdetto 4MB
+## RAM — breakdown and the 4 MB verdict
 
-Binario ARM9 (thumb, -O2, gc-sections): text 287K + data 13K + bss 114K =
-**414K**. Allocazioni engine a regime (log [MEM] alla prima scena):
+ARM9 binary (thumb, -O2, gc-sections): text 287K + data 13K + bss 114K =
+**414K**. Steady-state engine allocations ([MEM] log at the first scene):
 
-| Blocco | KB |
+| Block | KB |
 |---|---|
 | Phys (MCGA backbuffer) | 62 |
 | Log 640x480 | 300 |
@@ -155,205 +159,211 @@ Binario ARM9 (thumb, -O2, gc-sections): text 287K + data 13K + bss 114K =
 | BufSpeak (DosMalloc) | 256 |
 | BufCube 64x25x64x2 | 200 |
 | BufferBrick | 353 |
-| HQM (pool scene/grid/mask) | 391 |
+| HQM (scene/grid/mask pool) | 391 |
 | HQR sprites (SpriteMem min) | 49 |
 | HQR anims (AnimMem min) | 98 |
-| BufText/InvObj/minori | ~80 |
-| **Totale heap** | **~2090** |
+| BufText/InvObj/minor | ~80 |
+| **Heap total** | **~2090** |
 
-Spare a regime: **~1.5MB** (fake_heap_end − sbrk). Verdetto: **il gioco sta in
-un DS liscio da 4MB senza tagli e senza DSi mode**, con margine per l'audio
-(SampleMem min 200K se/quando Wave_Driver_Enable diventa vero) e per il
-buffer holomap. `Malloc(-1)`→0 fa già usare all'engine i minimi (SpriteMem
-50K/SampleMem 200K/AnimMem 100K). Niente VOX/FLA nel nitroFS (il .nds è 9.6MB
-di soli HQR core).
+Steady-state spare: **~1.5 MB** (fake_heap_end − sbrk). Verdict: **the game
+fits a plain 4 MB DS with no cuts and no DSi mode**, with room for audio
+(SampleMem min 200K if and when Wave_Driver_Enable becomes true) and for the
+holomap buffer. `Malloc(-1)`→0 already makes the engine use the minimums
+(SpriteMem 50K/SampleMem 200K/AnimMem 100K). No VOX/FLA in the nitroFS (the
+.nds is 9.6 MB of core HQRs alone).
 
-## Performance (sessione ottimizzazione — misure su melonDS full-speed)
+## Performance (optimisation session — measured on melonDS at full speed)
 
-### Strumenti (restano nel repo, attivi)
+### Instruments (they stay in the repo, active)
 
-- **Profiler per fasi**: `nds_prof.c` intercetta con `ld --wrap` (vedi `WRAPS`
-  nel Makefile — zero edit all'engine) AffScene/Cls/CopyScreen/ClsBoxes/
-  AffGrille/SetInterAnimObjet2/AffObjetIso/DrawOverBrick[3]; il present è
-  strumentato direttamente in `PresentRect640`. Ogni 50 frame stampa sul
-  console 7 righe `P0..P6`: μs medi/frame per fase (`lg` logica+attesa tick,
-  `cb` ClsBoxes, `cl` Cls, `cp` CopyScreen, `gr` AffGrille, `an` anim interp,
-  `ob` AffObjetIso, `ov` overbrick, `pr` present, `ot` resto AffScene,
-  `sf`/`si` = AffScene totale medio nei frame full/incrementali, `n`/`q` =
-  frame/frame-full nella finestra, `o` = attori/frame, `fps` =
-  NbFramePerSecond, `stk` = margine minimo stack DTCM in byte).
-- **Timebase**: `tickGetCount()` di calico (SYSTEM_CLOCK/64 = 1.909 μs/tick),
-  avviata con `tickInit()` in main_nds.c. Sanity check: `P0 w` ≈ 20000 μs a
+- **Per-phase profiler**: `nds_prof.c` intercepts, via `ld --wrap` (see `WRAPS`
+  in the Makefile — zero engine edits), AffScene/Cls/CopyScreen/ClsBoxes/
+  AffGrille/SetInterAnimObjet2/AffObjetIso/DrawOverBrick[3]; the present is
+  instrumented directly in `PresentRect640`. Every 50 frames it prints seven
+  `P0..P6` lines to the console: mean μs/frame per phase (`lg` logic + tick
+  wait, `cb` ClsBoxes, `cl` Cls, `cp` CopyScreen, `gr` AffGrille, `an` anim
+  interpolation, `ob` AffObjetIso, `ov` overbrick, `pr` present, `ot` the rest
+  of AffScene, `sf`/`si` = mean total AffScene over full/incremental frames,
+  `n`/`q` = frames/full frames in the window, `o` = actors/frame, `fps` =
+  NbFramePerSecond, `stk` = minimum DTCM stack headroom in bytes).
+- **Timebase**: calico's `tickGetCount()` (SYSTEM_CLOCK/64 = 1.909 μs/tick),
+  started with `tickInit()` in main_nds.c. Sanity check: `P0 w` ≈ 20000 μs at
   50 fps.
-- **`make PROFFULL=1`**: ROM diagnostica con AffScene forzata al full-redraw
-  ogni frame (caso "redraw pieno"/scroll camera sostenuto). Non shippare.
-- **Smoke input**: oltre a `nitrofiles/autoenter`, `nitrofiles/autowalk` =
-  secondi di UP tenuto (con svolte periodiche) dopo la fine dell'autoenter.
-  ATTENZIONE: in gioco Return apre l'HoloMap (ora funzionante, texture.c) —
-  l'autoenter NON deve durare oltre l'ingresso in scena (60 s ok).
+- **`make PROFFULL=1`**: a diagnostic ROM with AffScene forced to a full redraw
+  every frame (the "full redraw" / sustained camera scroll case). Do not ship.
+- **Input smoke test**: besides `nitrofiles/autoenter`, `nitrofiles/autowalk` =
+  seconds of UP held (with periodic turns) after the autoenter ends. CAREFUL:
+  in game, Return opens the HoloMap (which now works, texture.c) — the
+  autoenter must NOT outlast the entry into the scene (60 s is fine).
 
-### FIX timer (bug latente, non solo profiling)
+### Timer FIX (a latent bug, not just a profiling one)
 
-`timerStart(2, …)` di libnds programma l'HW TM2, ma **calico possiede TM2
-(system tick, `tickGetCount`) e TM3 (tick task) sull'ARM9**: il tick di gioco
-a 50 Hz lo stompava dal bring-up (tickGetCount congelato, tick task calico a
-rischio). Spostato su **TIMER 0** (`nds_sys.c`); TM1 resta libero. Su ARM9
-gli unici timer liberi per l'app sono TM0/TM1.
+libnds's `timerStart(2, …)` programs hardware TM2, but **calico owns TM2
+(the system tick, `tickGetCount`) and TM3 (the tick task) on the ARM9**: the
+50 Hz game tick had been stomping it since bring-up (tickGetCount frozen,
+calico's tick task at risk). Moved to **TIMER 0** (`nds_sys.c`); TM1 stays
+free. On the ARM9 the only timers free for the application are TM0/TM1.
 
-### Profiling PRIMA (prima scena, cella recintata, 1 attore visibile, μs/frame)
+### Profiling BEFORE (first scene, fenced cell, 1 visible actor, μs/frame)
 
-| fase | μs | note |
+| phase | μs | note |
 |---|---|---|
-| lg (logica+attesa tick) | 9000-9900 | al cap 50 fps include il busy-wait |
+| lg (logic + tick wait) | 9000-9900 | at the 50 fps cap this includes the busy-wait |
 | cb ClsBoxes | 430-500 | |
 | an SetInterAnimObjet2 | ~95 | |
-| **ob AffObjetIso** | **8600-9100** | **collo di bottiglia: ~9 ms PER ATTORE** |
+| **ob AffObjetIso** | **8600-9100** | **the bottleneck: ~9 ms PER ACTOR** |
 | ov DrawOverBrick | 200-1000 | |
 | pr present | 116-140 | dirty box |
-| ot resto AffScene | ~290 | |
-| **si AffScene tot (incr.)** | **10000-11000** | |
+| ot rest of AffScene | ~290 | |
+| **si AffScene total (incr.)** | **10000-11000** | |
 
-Con ~4-5 attori a schermo + full redraw = i 12-13 fps osservati al bring-up.
-Il present NON era il collo (130 μs nei frame incrementali).
+With ~4-5 actors on screen plus a full redraw, that is the 12-13 fps observed
+at bring-up. The present was NOT the bottleneck (130 μs on incremental frames).
 
-### Mosse applicate (delta misurato, stessa scena)
+### Moves applied (measured delta, same scene)
 
-1. **ITCM+ARM32 per il codice caldo** (macro `PORT_FASTCODE` in
-   `translate/port_fast.h`, vuote su PC): AffObjetIso e statici (p_ob_iso),
-   RotList/TransRotList/RotMatIndex2/Rot/proiezioni (p_trigo), ComputePoly_A/
-   EdgeGauche/EdgeDroite/ClipPolyEdge/ComputeSphere_A (s_poly), tutti i
-   filler SVGAPoly* + FillVertic_A (s_fillv), AffGraph (graph_a), Line_A
-   (s_line), PresentRect640 (nds_video). `CPYMASK.C` promosso INTERO in ITCM
-   senza edit: oggetto rinominato `CPYMASK.itcm.o` (+ `-marm`) — ds9.ld mette
-   in ITCM il .text degli oggetti `*.itcm.*`. ITCM: 20112/32736 byte.
+1. **ITCM+ARM32 for the hot code** (the `PORT_FASTCODE` macros in
+   `translate/port_fast.h`, empty on PC): AffObjetIso and the statics
+   (p_ob_iso), RotList/TransRotList/RotMatIndex2/Rot/the projections (p_trigo),
+   ComputePoly_A/EdgeGauche/EdgeDroite/ClipPolyEdge/ComputeSphere_A (s_poly),
+   all the SVGAPoly* fillers + FillVertic_A (s_fillv), AffGraph (graph_a),
+   Line_A (s_line), PresentRect640 (nds_video). `CPYMASK.C` was promoted WHOLE
+   into ITCM with no edits: the object is renamed `CPYMASK.itcm.o` (plus
+   `-marm`) — ds9.ld puts the .text of `*.itcm.*` objects into ITCM. ITCM:
+   20112/32736 bytes.
 2. **DTCM** (`PORT_FASTBSS`/`PORT_FASTDATA`): List_Point (3K), TabVerticG/D +
-   TabCoulG/D (3.8K), TabMat (1.1K), matrici LMatrice* e scalari caldi
+   TabCoulG/D (3.8K), TabMat (1.1K), the LMatrice* matrices and the hot scalars
    (compteur/lAlpha…/X0…/Xp/Yp/XCentre/YCentre). **.dtcm.bss = 8.2K**.
-3. **Present**: pack loop a letture u32 (2 load per parola invece di 8 byte
-   load) + ITCM/ARM. pr 130→110 μs (dirty box); pesa nei frame full.
+3. **Present**: the pack loop switched to u32 reads (2 loads per word instead
+   of 8 byte loads) plus ITCM/ARM. pr 130→110 μs (dirty box); it weighs on full
+   frames.
 
-   → **ob 8.9 → 6.9-7.0 ms (−23%), si 10.5 → 8.1 ms (−23%)** su melonDS.
-   NB: melonDS non emula le cache al 100%: il guadagno ITCM/DTCM su hardware
-   reale dovrebbe essere maggiore, i rapporti tra fasi restano affidabili.
+   → **ob 8.9 → 6.9-7.0 ms (−23%), si 10.5 → 8.1 ms (−23%)** on melonDS.
+   NB: melonDS does not emulate the caches fully; the ITCM/DTCM gain on real
+   hardware should be larger, while the ratios between phases stay reliable.
 
-4. **-O3 sui translate caldi: REVERTITO** — nessun guadagno misurabile
-   (±1%) col codice caldo già in ITCM; costava 1.1KB di ITCM.
-5. **GRILLE.C in ITCM: REVERTITO** — gr 252.7→251.1 ms nel test full-redraw:
-   il costo di AffGrille non è il walk del cubo 64×25×64 ma i blit RLE di
-   AffGraph (già in ITCM). Non vale 3.6KB di ITCM.
-6. **memcpy/memset override ITCM/ARM (`nds_fastmem.c`)** — AffGraph fa una
-   memcpy/memset newlib per OGNI run RLE (centinaia di migliaia di copie da
-   2-20 byte in un full redraw): definizione locale con fast-path per n
-   piccoli + blocchi u32×8, compilata `-ffreestanding -fno-builtin` (altrimenti
-   GCC ri-pattern-matcha i loop in call a se stessa). Misurato sul full
-   redraw forzato: **gr 252.7→207.0 ms (−18%), Cls 5.2→4.0 ms,
-   CopyScreen 8.3→7.6 ms, AffScene full 283→235 ms**; anche ob scende
-   6.9→6.4 ms. Vince su tutto (fread incluse), nessun --wrap: l'oggetto
-   utente batte il membro d'archivio libc.
+4. **-O3 on the hot translate files: REVERTED** — no measurable gain (±1%)
+   with the hot code already in ITCM, and it cost 1.1 KB of ITCM.
+5. **GRILLE.C in ITCM: REVERTED** — gr 252.7→251.1 ms in the full-redraw test:
+   the cost of AffGrille is not the 64×25×64 cube walk but AffGraph's RLE blits
+   (already in ITCM). Not worth 3.6 KB of ITCM.
+6. **memcpy/memset overridden in ITCM/ARM (`nds_fastmem.c`)** — AffGraph makes
+   one newlib memcpy/memset per RLE run (hundreds of thousands of 2-20 byte
+   copies in a full redraw): a local definition with a fast path for small n
+   plus u32×8 blocks, compiled `-ffreestanding -fno-builtin` (otherwise GCC
+   pattern-matches the loops back into calls to itself). Measured on the forced
+   full redraw: **gr 252.7→207.0 ms (−18%), Cls 5.2→4.0 ms, CopyScreen
+   8.3→7.6 ms, AffScene full 283→235 ms**; ob drops 6.9→6.4 ms as well. It wins
+   everywhere (fread included), with no --wrap: the user object beats the libc
+   archive member.
 
-### DTCM: ATTENZIONE allo stack (guru meditation)
+### DTCM: MIND THE STACK (guru meditation)
 
-Lo stack del thread principale di calico sta in CIMA alla DTCM e cresce verso
-il basso dentro quel che `.dtcm.bss` lascia libero (budget totale 16000 byte).
-Il primo tentativo (15KB di dati in DTCM) ha lasciato ~1KB di stack → data
-abort dentro calico (mutex/ntrcardRomRead) al boot. Il probe `P6 stk` (paint
-0x5A in main_nds.c) misura il margine minimo reale: **con 8.2KB di dati in
-DTCM il margine osservato è ~2.7KB** (uso stack max ~5.1KB attraverso
-boot/nitroFS/menu/intro/scena). Non scendere sotto ~1.5KB di margine.
+The stack of calico's main thread lives at the TOP of DTCM and grows downwards
+into whatever `.dtcm.bss` leaves free (total budget 16000 bytes). The first
+attempt (15 KB of data in DTCM) left ~1 KB of stack → a data abort inside
+calico (mutex/ntrcardRomRead) at boot. The `P6 stk` probe (painting 0x5A in
+main_nds.c) measures the real minimum headroom: **with 8.2 KB of data in DTCM
+the observed headroom is ~2.7 KB** (max stack usage ~5.1 KB across
+boot/nitroFS/menu/intro/scene). Do not go below ~1.5 KB of headroom.
 
-### Profiling DOPO
+### Profiling AFTER
 
-Frame incrementale (gameplay normale, stessa scena, μs/frame):
+Incremental frame (normal gameplay, same scene, μs/frame):
 
-| fase | prima | dopo |
+| phase | before | after |
 |---|---|---|
-| ob AffObjetIso (1 attore) | 8600-9100 | **6300-6600** |
+| ob AffObjetIso (1 actor) | 8600-9100 | **6300-6600** |
 | cb ClsBoxes | 430-500 | 300-500 |
 | ov DrawOverBrick | 200-1000 | 190-1100 |
 | pr present (dirty box) | 116-140 | 103-117 |
 | an / ot | 95 / 290 | 95 / 285 |
-| **si AffScene tot** | **10000-11000** | **~7100-8500** (−23%) |
+| **si AffScene total** | **10000-11000** | **~7100-8500** (−23%) |
 | fps | 50 (cap) | 50 (cap) |
 
-Frame FULL-REDRAW (misura `make PROFFULL=1`, forzato ogni frame — equivale
-allo scroll camera; μs/frame):
+FULL-REDRAW frame (measured with `make PROFFULL=1`, forced every frame — the
+equivalent of a camera scroll; μs/frame):
 
-| fase | prima* | dopo |
+| phase | before* | after |
 |---|---|---|
 | cl Cls | 5161 | 4014 |
 | cp CopyScreen | 8315 | 7597 |
 | **gr AffGrille** | **252660** | **206984** |
 | pr present full | 8622 | 8621 |
 | ob + ov | ~8100 | ~7300 |
-| **sf AffScene full tot** | **283116** | **~234800 (−17%)** |
-| fps (full forzato ogni frame) | 3 | 4 |
+| **sf AffScene full total** | **283116** | **~234800 (−17%)** |
+| fps (full forced every frame) | 3 | 4 |
 
-\* "prima" della colonna full = build già con ITCM/DTCM round A (il PROFFULL
-è nato dopo); il baseline assoluto era ancora più lento (present a byte,
-AffGraph thumb in main RAM).
+\* the "before" of the full column is already a build with ITCM/DTCM round A
+(PROFFULL came later); the absolute baseline was slower still (byte-wise
+present, AffGraph in thumb in main RAM).
 
-### Stato finale / margini residui
+### Final state / remaining headroom
 
-- **Gameplay normale (frame incrementali): 50 fps** (cap tick-lock) con
-  ~11-12 ms di margine per frame — regge 3-4 attori a schermo prima di
-  scendere sotto i 50; a 5+ attori ~25-30 fps stimati (ob ≈ 6.5 ms/attore).
-- **Il redraw pieno resta il muro: ~235 ms** (era ~283+ nel round A, di più
-  al bring-up). NON è sostenuto in gioco: il recenter camera di PERSO.C è
-  UN frame full ogni attraversamento di bordo schermo (poi si torna
-  incrementali) → hitch percettibile a ogni scroll, non slideshow costante.
-- Margini futuri sul full redraw (in ordine di resa attesa):
-  1. **AffGrille incrementale/dirty**: nel caso scroll il 90% dei brick resta
-     identico — shift del Log + repaint della sola striscia nuova
-     eliminerebbe quasi tutto il costo (grosso intervento engine, va
-     progettato: ListBrickColon/DrawOverBrick dipendono dal repaint totale).
-  2. **Inner loop di AffGraph**: le run RLE sono 2-20 byte — inline della
-     copia (niente call memcpy) dentro graph_a.c darebbe un altro taglio
-     stimato 20-40% di gr (richiede di toccare translate/graph_a.c oltre le
-     macro: da concordare, il file è condiviso col PC).
-  3. Cls+CopyScreen (11.6 ms): evitabili solo cambiando la strategia di
-     restore (Screen è il "pulito" per ClsBoxes) — poco succo.
-- melonDS non emula cache/TCM al 100%: su hardware reale i rapporti possono
-  spostarsi (ITCM/DTCM dovrebbero rendere di più, la main RAM di meno).
-  `NbFramePerSecond` resta la metrica finale da verificare su console vera.
+- **Normal gameplay (incremental frames): 50 fps** (tick-lock cap) with
+  ~11-12 ms of headroom per frame — it holds 3-4 actors on screen before
+  dropping below 50; at 5+ actors, an estimated ~25-30 fps (ob ≈ 6.5 ms per
+  actor).
+- **The full redraw is still the wall: ~235 ms** (it was ~283+ in round A, and
+  more at bring-up). It is NOT sustained in game: PERSO.C's camera recentre is
+  ONE full frame per screen-edge crossing (then it goes back to incremental) →
+  a perceptible hitch at every scroll, not a constant slideshow.
+- Future headroom on the full redraw (in expected order of return):
+  1. **Incremental/dirty AffGrille**: in the scroll case 90% of the bricks stay
+     identical — shifting Log and repainting only the new strip would remove
+     almost all of the cost (a large engine change, to be designed:
+     ListBrickColon/DrawOverBrick depend on the total repaint).
+  2. **AffGraph's inner loop**: the RLE runs are 2-20 bytes — inlining the copy
+     (no memcpy call) inside graph_a.c would cut an estimated further 20-40% of
+     gr (it means touching translate/graph_a.c beyond the macros: to be agreed,
+     since the file is shared with the PC).
+  3. Cls+CopyScreen (11.6 ms): avoidable only by changing the restore strategy
+     (Screen is the "clean" copy for ClsBoxes) — little juice.
+- melonDS does not emulate caches/TCM fully: on real hardware the ratios may
+  shift (ITCM/DTCM should pay off more, main RAM less). `NbFramePerSecond`
+  remains the final metric, to be verified on a real console.
 
-## Savegame su fat:/ (sessione savegame)
+## Savegames on fat:/ (savegame session)
 
-**I salvataggi sono persistenti sulla SD** (flashcart via DLDI auto-patchato;
-melonDS via immagine SD/folder-sync). nitroFS resta read-only per gli asset.
+**Savegames persist on the SD** (flashcart through auto-patched DLDI; melonDS
+through an SD image / folder sync). The nitroFS stays read-only, for assets.
 
-### Come funziona (tutto in platform/, 0 edit engine)
+### How it works (all in platform/, 0 engine edits)
 
-- `main_nds.c`: `PORT_FatInit()` (nds_sys.c) PRIMA di nitroFSInit —
-  `fatInitDefault()` + `mkdir fat:/lba1` + `mkdir fat:/lba1/save`. Se
-  fallisce (es. emulatore senza DLDI): log `fat: NO SD (DLDI) - saves
-  DISABLED` e il gioco gira come prima (Save() fallisce garbato in-engine,
-  "Error Writing Saved Game" nel menu).
-- `nds_sys.c` — routing per **basename** (dopo la normalizzazione lowercase):
-  - `*.lba` → `fat:/lba1/save/<nome>` — sono SOLO i savegame (S*.LBA random
-    da `SaveGameWithName`, AUTOSAVE.LBA; gli asset sono .hqr/.cfg/.lst).
-    Vale per fopen (read+write), quindi Load/Save/FileSize/Exists/Copy.
-  - `lba.cfg` → in scrittura sempre su fat; in lettura la copia fat vince
-    SOLO se esiste (primo boot: si legge quella nitroFS). Così i volumi
-    salvati da "save settings" persistono.
-  - `__tempo.def` (lo scratch `c://__tempo.def` di DEF_FILE.C) → su fat.
-  - `SYS_FindFirst("*.LBA")` (PlayerGameList/FindPlayerFile, enumerazione
-    slot del file-selector) → opendir di `fat:/lba1/save` invece della cwd.
-  - `remove()` → `NDS_remove` (nuovo wrapper in watcom_compat.h): stessa
-    normalizzazione+routing (menu "détruire une sauvegarde", __tempo.def).
-  - Ogni open/remove ruotato logga `[SAV] ...` sul console.
-- **AUTOSAVE**: l'engine salva `AUTOSAVE.LBA` da solo a OGNI cambio cubo
-  (InitCube: `NewCube != oldcube && !DisableAutoSave`) — verificato live su
-  melonDS alla prima scena. Il save manuale è nel **menu pausa** (START →
-  Save game → "create new saved game" → nome con la griglia lettere →
-  Return); al riavvio: main menu → **Continue saved game** → lista slot
-  (AUTOSAVE + salvataggi con nome).
-- I save sono nel formato di QUESTO port (struct GCC senza pack, vedi nota
-  savegame in PORTING_NOTES.md): NON compatibili coi .LBA DOS, ma stabili
-  tra build finché T_OBJET & co. non cambiano layout.
+- `main_nds.c`: `PORT_FatInit()` (nds_sys.c) BEFORE nitroFSInit —
+  `fatInitDefault()` + `mkdir fat:/lba1` + `mkdir fat:/lba1/save`. If it fails
+  (e.g. an emulator with no DLDI): it logs `fat: NO SD (DLDI) - saves DISABLED`
+  and the game runs as before (Save() fails gracefully in-engine, "Error
+  Writing Saved Game" in the menu).
+- `nds_sys.c` — routing by **basename** (after the lowercase normalisation):
+  - `*.lba` → `fat:/lba1/save/<name>` — these are ONLY savegames (the random
+    S*.LBA from `SaveGameWithName`, AUTOSAVE.LBA; assets are .hqr/.cfg/.lst).
+    It applies to fopen (read and write), hence to Load/Save/FileSize/Exists/
+    Copy.
+  - `lba.cfg` → always on fat when writing; when reading, the fat copy wins
+    ONLY if it exists (first boot: the nitroFS one is read). That way the
+    volumes saved by "save settings" persist.
+  - `__tempo.def` (DEF_FILE.C's `c://__tempo.def` scratch file) → on fat.
+  - `SYS_FindFirst("*.LBA")` (PlayerGameList/FindPlayerFile, the file
+    selector's slot enumeration) → opendir on `fat:/lba1/save` instead of the
+    cwd.
+  - `remove()` → `NDS_remove` (a new wrapper in watcom_compat.h): the same
+    normalisation and routing (the "détruire une sauvegarde" menu,
+    __tempo.def).
+  - Every routed open/remove logs `[SAV] ...` to the console.
+- **AUTOSAVE**: the engine saves `AUTOSAVE.LBA` by itself at EVERY cube change
+  (InitCube: `NewCube != oldcube && !DisableAutoSave`) — verified live on
+  melonDS at the first scene. The manual save is in the **pause menu** (START →
+  Save game → "create new saved game" → a name from the letter grid → Return);
+  on restart: main menu → **Continue saved game** → the slot list (AUTOSAVE
+  plus named saves).
+- The saves are in THIS port's format (GCC structs without packing, see the
+  savegame note in PORTING_NOTES.md): NOT compatible with DOS .LBA files, but
+  stable between builds as long as T_OBJET and friends do not change layout.
 
-### Setup melonDS (config usata e verificata)
+### melonDS setup (the configuration used and verified)
 
-`<melonDS>\melonDS.toml`, sezione `[DLDI]`:
+`<melonDS>\melonDS.toml`, section `[DLDI]`:
 
 ```toml
 [DLDI]
@@ -365,462 +375,468 @@ FolderSync = true
 FolderPath = "<repo>\\sd_root"
 ```
 
-melonDS sincronizza `sd_root/` → immagine al boot e riscrive i file
-modificati in `sd_root/` alla CHIUSURA (i save compaiono in
-`sd_root/LBA1/save/*.lba` dopo aver chiuso l'emulatore). NB: melonDS
-inserisce anche la ROM caricata nella root dell'immagine (per argv) e la
-sincronizza in sd_root — file da ignorare/cancellare.
-Su flashcart: i save finiscono in `SD:/lba1/save/` (la dir viene creata al
-primo boot).
+melonDS syncs `sd_root/` → image at boot and writes the modified files back
+into `sd_root/` when it CLOSES (saves appear in `sd_root/LBA1/save/*.lba` after
+you close the emulator). NB: melonDS also inserts the loaded ROM into the root
+of the image (for argv) and syncs it into sd_root — a file to ignore or delete.
+On a flashcart the saves end up in `SD:/lba1/save/` (the directory is created
+on first boot).
 
-### Test end-to-end (harness diag, vedi "Smoke test")
+### End-to-end test (the diag harness, see "Smoke test")
 
-1. `make diag DIAG_AUTOENTER=60 DIAG_AUTOSAVE=85` → run: a ~85s lo script
-   apre il menu pausa e salva col nome "DS" → `[SAV] fopen(wb)
-   fat:/lba1/save/s####.lba` sul console, file in sd_root dopo la chiusura.
-2. `make diag DIAG_AUTOENTER= DIAG_AUTOLOAD=45` → run: skip loghi a colpi
-   di Esc, al menu → Continue saved game → carica il primo slot → la scena
-   riparte dal punto salvato.
+1. `make diag DIAG_AUTOENTER=60 DIAG_AUTOSAVE=85` → run: at ~85 s the script
+   opens the pause menu and saves under the name "DS" → `[SAV] fopen(wb)
+   fat:/lba1/save/s####.lba` on the console, the file in sd_root after closing.
+2. `make diag DIAG_AUTOENTER= DIAG_AUTOLOAD=45` → run: skip the logos with Esc
+   pulses, at the menu → Continue saved game → load the first slot → the scene
+   restarts from the saved point.
 
 ## Freeze dossier
 
-L'utente riporta piccoli freeze non deterministici su hardware reale (non
-guru: FREEZE). Stato indiziario:
+The user reports small non-deterministic freezes on real hardware (not gurus:
+FREEZES). Circumstantial state:
 
-1. **Type-pun Info/Info1 (edit #33) — FIXATO, primo sospettato.**
-   `*(ULONG *)(&ptrobj->Info)` in OBJECT.C (MOVE_RANDOM ×3) e PERSO.C
-   (spawn pinguino): `offsetof(T_OBJET,Info)` ≡ 2 (mod 4) — su ARMv5 la
-   STR ignora i 2 bit bassi ⇒ la write a 32 bit del timer atterrava su
-   `{OffsetLife, Info}` **corrompendo OffsetLife** dell'attore: al DoLife
-   successivo lo script riparte da un offset selvaggio (opcode garbage →
-   loop/stati incoerenti = freeze senza exception, oppure comportamenti
-   erratici). Colpiva OGNI attore MOVE_RANDOM — le guardie/animali fuori
-   dalla Citadella, esattamente dove l'utente sta giocando ora. Static
-   assert di guardia in nds_ui_glue.c. Grep sistematico di tutto engine/:
-   nessun altro type-pun `*(TYPE *)(&...)` residuo (GRILLE/MESSAGE leggono
-   da basi allineate con offset pari — ok).
-2. **Finestra WaveMove sulle voci (aperto, non toccato)**: le voci suonano
-   direttamente da BufSpeak (nessuna copia nel pool); se un nuovo dialogo
-   interrompe una voce in corso l'ARM7 legge il buffer mentre viene
-   riscritto — artefatto audio ("crac"), presente anche su DOS, NON è un
-   freeze del gioco. Restare in ascolto; eventuale fix = copiare anche le
-   voci nel pool con budget maggiorato (~180K in più).
-3. **Busy-wait su condizione che non arriva** (es. `while(!WavePause())`,
-   attese su WaveInList): i mirror di stato canali sono calcolati a tick
-   ARM9 (niente PXI nelle query) — nessun caso noto di stallo, ma se si
-   ripresenta un freeze il probe è: console sotto (SELECT tenuto 1s),
-   guardare se le righe P0-P6 del profiler continuano a scorrere (ISR viva,
-   MainLoop bloccato) e se ci sono `[wave]` pendenti.
+1. **The Info/Info1 type-pun (edit #33) — FIXED, prime suspect.**
+   `*(ULONG *)(&ptrobj->Info)` in OBJECT.C (MOVE_RANDOM ×3) and PERSO.C
+   (penguin spawn): `offsetof(T_OBJET,Info)` ≡ 2 (mod 4) — on ARMv5 the STR
+   ignores the low two bits, so the 32-bit write of the timer landed on
+   `{OffsetLife, Info}`, **corrupting the actor's OffsetLife**: at the next
+   DoLife the script restarts from a wild offset (garbage opcodes →
+   loops/incoherent states = a freeze with no exception, or erratic behaviour).
+   It hit EVERY MOVE_RANDOM actor — the guards and animals outside the Citadel,
+   exactly where the user is playing now. A static assert guards it in
+   nds_ui_glue.c. Systematic grep of all of engine/: no other `*(TYPE *)(&...)`
+   type-pun left (GRILLE/MESSAGE read from aligned bases at even offsets — fine).
+2. **The WaveMove window on voices (open, untouched)**: voices play directly
+   from BufSpeak (no copy into the pool); if a new dialogue interrupts a voice
+   in progress, the ARM7 reads the buffer while it is being rewritten — an
+   audio artefact (a "crack"), present on DOS too, NOT a game freeze. Keep
+   listening; the fix, if needed, is to copy the voices into the pool as well,
+   with a larger budget (~180K more).
+3. **A busy-wait on a condition that never arrives** (e.g. `while(!WavePause())`,
+   waits on WaveInList): the channel state mirrors are computed on ARM9 ticks
+   (no PXI in the queries) — no known stall case, but if a freeze reappears the
+   probe is: bring up the console (hold SELECT for 1 s), see whether the
+   profiler's P0-P6 lines are still scrolling (ISR alive, MainLoop stuck) and
+   whether there are pending `[wave]`s.
 
-Durante i test di questa sessione (4 run melonDS da ~2 min, boot→scena→
-menu pausa→save→load): nessun freeze osservato.
+During this session's tests (4 melonDS runs of ~2 min: boot→scene→pause
+menu→save→load): no freeze observed.
 
-## Audio ARM7/calico (nds_audio.c — sessione audio)
+## ARM7/calico audio (nds_audio.c — audio session)
 
-**SFX + voci VOX funzionano.** Wave + Mixer reali in `nds_audio.c` (gli stub
-sono stati rimossi da stubs.c); semantica DOS come da spec in
-`platform/sdl/PORTING_NOTES.md` "Audio (sdl_audio.c)". Il parse VOC +
-pitchbend è condiviso col PC in **`platform/audio_common.h`** (header-only,
-incluso da sdl_audio.c e nds_audio.c dopo port.h; build SDL riverificata
-verde + smoke LBA_WAVDUMP: voce cella 11111 Hz, peak 4317, 50% campioni
-non-zero).
+**SFX + VOX voices work.** Wave + Mixer are real, in `nds_audio.c` (the stubs
+were removed from stubs.c); DOS semantics as specified in
+`platform/sdl/PORTING_NOTES.md`, "Audio (sdl_audio.c)". The VOC parsing and the
+pitchbend are shared with the PC in **`platform/audio_common.h`** (header-only,
+included by sdl_audio.c and nds_audio.c after port.h; SDL build re-verified
+green + LBA_WAVDUMP smoke test: cell voice at 11111 Hz, peak 4317, 50% non-zero
+samples).
 
-### Architettura
+### Architecture
 
-- **Mixing in hardware**: ogni sample engine → 1 canale hw dei 16, pilotato
-  dall'ARM9 con l'API sound di calico (`soundPreparePcm/soundStop/
-  soundChSetVolume/...`, `<calico/nds/arm9/sound.h>`): i comandi viaggiano
-  via PXI verso il server audio dentro l'ARM7 stock di calico
-  (`ds7_maine.elf`) — **zero codice ARM7 custom**.
-- `InitWave`: `soundInit()` + `soundPowerOn()` + mixer config; nessun timer
-  hw toccato (TM0 gioco e TM2/TM3 calico intatti), nessun IRQ.
-- **Niente PXI nelle query**: WaveInList è pollato fitto dai dialoghi, quindi
-  lo stato canali è specchiato in una tabella ARM9 (`wch[16]`) e la fine di
-  ogni sample è CALCOLATA: `ticks = samples * hwtimer / 32` (esatto:
-  TICK_FREQ = SYSTEM_CLOCK/64, SOUND_CLOCK = SYSTEM_CLOCK/2) + margine 4 ms.
-  Repeat=1 → SoundMode_OneShot (si ferma da solo in hw); Repeat=0 →
-  SoundMode_Repeat infinito (fermato da WaveStop*); Repeat>1 (raro,
-  BigSampleRepeat di GERETRAK) → loop hw + **watchdog thread calico**
-  (prio MAIN-1, stack 1.5KB, sleep 50 ms) che fa `soundStop` allo scadere.
-  Il mutex `wmutex` serializza tabella + chiamate sound tra main e watchdog.
-- **Volumi**: engine passa L/R già pannati (0..128 SFX, 512/512 voce) →
-  vol hw 11-bit = (L+R)*2 (voce satura a 2047 = esattamente il rapporto 4×
-  voce/SFX del DOS), pan = R*127/(L+R). Master = WaveVolume*MasterVolume
-  del CFG sul volume mixer hw 7-bit (`soundSetMixerVolume`). WavePause =
-  master a 0 (i canali continuano muti: la contabilità a tick resta
-  coerente), WaveContinue lo ripristina.
+- **Mixing in hardware**: each engine sample → 1 of the 16 hardware channels,
+  driven from the ARM9 with calico's sound API (`soundPreparePcm/soundStop/
+  soundChSetVolume/...`, `<calico/nds/arm9/sound.h>`): the commands travel over
+  PXI to the audio server inside calico's stock ARM7 (`ds7_maine.elf`) —
+  **zero custom ARM7 code**.
+- `InitWave`: `soundInit()` + `soundPowerOn()` + mixer config; no hardware
+  timer touched (the game's TM0 and calico's TM2/TM3 are intact), no IRQ.
+- **No PXI in the queries**: WaveInList is polled tightly by the dialogues, so
+  the channel state is mirrored in an ARM9 table (`wch[16]`) and the end of each
+  sample is COMPUTED: `ticks = samples * hwtimer / 32` (exact: TICK_FREQ =
+  SYSTEM_CLOCK/64, SOUND_CLOCK = SYSTEM_CLOCK/2) plus a 4 ms margin. Repeat=1 →
+  SoundMode_OneShot (it stops itself in hardware); Repeat=0 → infinite
+  SoundMode_Repeat (stopped by WaveStop*); Repeat>1 (rare, GERETRAK's
+  BigSampleRepeat) → a hardware loop plus a **calico watchdog thread**
+  (priority MAIN-1, 1.5 KB stack, 50 ms sleep) that calls `soundStop` when the
+  time is up. The `wmutex` mutex serialises the table and the sound calls
+  between the main thread and the watchdog.
+- **Volumes**: the engine passes L/R already panned (0..128 for SFX, 512/512 for
+  voice) → 11-bit hardware volume = (L+R)*2 (voice saturates at 2047 = exactly
+  the DOS 4× voice/SFX ratio), pan = R*127/(L+R). Master = the CFG's
+  WaveVolume*MasterVolume applied to the 7-bit hardware mixer volume
+  (`soundSetMixerVolume`). WavePause = master to 0 (the channels keep running
+  silently, so the tick accounting stays coherent), WaveContinue restores it.
 
-### Memoria sample (l'ARM7 legge la main RAM: byte fermi + cache flush)
+### Sample memory (the ARM7 reads main RAM: bytes must sit still, plus a cache flush)
 
-- **SFX**: copiati XOR 0x80 (VOC unsigned → hw signed) in un **pool LRU
-  keyed sull'handle HQR** (budget 320 KB, 64 entry, malloc per entry,
-  pad a parola con silenzio, `armDCacheFlush` dopo il fill). Così
-  **WaveMove è un memmove puro**: l'hw non legge mai lo heap engine,
-  niente fixup dei puntatori. Le entry con un canale attivo non vengono
-  mai evictate. Budget usato a regime: pochi 10-100 KB (i sample sono
-  piccoli); heap spare resta > 1 MB (il pool + SampleMem 200 KB
-  dell'engine stanno nel margine da ~1.5 MB).
-- **Voci (handle 0x1234)**: play DIRETTO da BufSpeak con XOR in place +
-  flush (niente copia da 172 KB). Sicuro perché (MESSAGE.C): PlaySpeakVoc
-  ricarica BufSpeak fresco prima di OGNI WavePlay, TestSpk carica la parte
-  successiva solo quando WaveInList dice finito, BufSpeak è un blocco
-  DosMalloc fisso mai toccato da WaveMove. Unica finestra: un nuovo dialogo
-  che interrompe una voce in corso sovrascrive il buffer mentre l'hw legge
-  — stesso artefatto "crac HP" del driver DOS originale (commentato in
-  MESSAGE.C), non regressione.
+- **SFX**: copied XOR 0x80 (VOC unsigned → hardware signed) into an **LRU pool
+  keyed on the HQR handle** (320 KB budget, 64 entries, one malloc per entry,
+  padded to a word with silence, `armDCacheFlush` after the fill). This makes
+  **WaveMove a pure memmove**: the hardware never reads the engine heap, so
+  there are no pointer fixups. Entries with an active channel are never evicted.
+  Steady-state budget use: a few tens to a hundred KB (the samples are small);
+  the heap spare stays > 1 MB (the pool plus the engine's 200 KB SampleMem fit
+  in the ~1.5 MB margin).
+- **Voices (handle 0x1234)**: played DIRECTLY from BufSpeak, with an in-place
+  XOR plus a flush (no 172 KB copy). This is safe because (MESSAGE.C):
+  PlaySpeakVoc reloads a fresh BufSpeak before EVERY WavePlay, TestSpk loads the
+  next part only when WaveInList says the previous one is done, and BufSpeak is
+  a fixed DosMalloc block that WaveMove never touches. The single window: a new
+  dialogue interrupting a voice in progress overwrites the buffer while the
+  hardware is reading it — the same "speaker crack" artefact as the original DOS
+  driver (commented in MESSAGE.C), not a regression.
 
 ### VOX / CFG
 
-- In nitrofiles ci sono SOLO `vox/en_gam.vox` (1.8 MB) + `vox/en_000.vox`
-  (6 MB) = voci inglesi della prima isola; .nds totale ~17.8 MB. Il CFG
-  nitroFS ha già `LanguageCD: English`, `WaveDriver: W_SB16.DLL`,
-  `WaveRate: 22000` (letto per parità protocollo ma ignorato: ogni canale
-  hw ha il suo timer), `MixerDriver: NoMixer`, `FlagKeepVoice: ON`.
-  Il **BYOA finale (libfat)** porterà tutte le lingue/isole.
-- I nomi file nitroFS sono lowercase (NDS_fopen normalizza il path).
+- The nitroFS carries ONLY `vox/en_gam.vox` (1.8 MB) + `vox/en_000.vox` (6 MB)
+  = the English voices of the first island; total .nds ~17.8 MB. The nitroFS CFG
+  already has `LanguageCD: English`, `WaveDriver: W_SB16.DLL`, `WaveRate: 22000`
+  (read for protocol parity but ignored: every hardware channel has its own
+  timer), `MixerDriver: NoMixer`, `FlagKeepVoice: ON`.
+  The **final BYOA (libfat)** will bring all the languages and islands.
+- nitroFS filenames are lowercase (NDS_fopen normalises the path).
 
-### Limiti noti
+### Known limits
 
-- Interpolazione lineare del driver DOS sulle voci: l'hw DS non interpola
-  (suono leggermente più "raw", non udibile a 11 kHz sullo speaker DS).
-- Fino a 3 sample di coda troncati sulle voci (len hw in parole da 4);
-  gli SFX sono paddati con silenzio, nessun click.
-- WaveSaveState/RestoreState: stop senza resume posizionale (nessun
-  chiamante nel game — verificato).
-- **Intro: il testo parte qualche secondo dopo la voce** (osservato su
-  melonDS): non è il driver — la voce parte a fine `Speak()` e il
-  typewriter può iniziare solo dopo il load LZSS dell'immagine di pagina
-  da nitroFS (secondi su DS, istantaneo su PC). Stesso ordine di chiamate
-  del PC/DOS.
-- Musica: vedi "## Musica" qui sotto (fatta, streaming da SD).
+- The DOS driver's linear interpolation on voices: the DS hardware does not
+  interpolate (a slightly more "raw" sound, inaudible at 11 kHz on the DS
+  speaker).
+- Up to 3 tail samples truncated on voices (the hardware length is in words of
+  4); SFX are padded with silence, so no click.
+- WaveSaveState/RestoreState: stop without a positional resume (no callers in
+  the game — verified).
+- **Intro: the text starts a few seconds after the voice** (observed on
+  melonDS): this is not the driver — the voice starts at the end of `Speak()`
+  and the typewriter can only begin after the LZSS load of the page image from
+  nitroFS (seconds on the DS, instant on PC). Same call order as on PC/DOS.
+- Music: see "## Music" below (done, streamed from SD).
 
-## Musica (nds_music.c — sessioni musica)
+## Music (nds_music.c — music sessions)
 
-**Tutta la musica del gioco vive in UN solo spazio di indici**, il numero di
-traccia CD `N`, e l'engine ci arriva da due API diverse:
+**All the game's music lives in ONE index space**, the CD track number `N`, and
+the engine reaches it through two different APIs:
 
-| chiamata engine | catena | indice |
+| engine call | chain | index |
 |---|---|---|
 | `PlayCdTrack(num)` | → `PlayTrackCDR(num+1)` | `N = num+1` |
 | `PlayMidiFile(num)` | → `PlayMidi(HQR_Get(HQR_Midi,num))` | `N = num+1` |
 
-`PlayMusic()` (AMBIANCE.C:384) smista: con `CDEnable` e `num` in 1..9 va sul
-CD, altrimenti sul MIDI; più una manciata di `PlayMidiFile()` diretti
-(GAMEMENU 203/2555/2613/3191, PERSO 321/463, PLAYFLA 309 = "fla flute").
+`PlayMusic()` (AMBIANCE.C:384) dispatches: with `CDEnable` and `num` in 1..9 it
+goes to the CD, otherwise to MIDI; plus a handful of direct `PlayMidiFile()`
+calls (GAMEMENU 203/2555/2613/3191, PERSO 321/463, PLAYFLA 309 = the "fla
+flute").
 
-### Sorgente asset: Common/Midi, non solo Common/Music
+### Asset source: Common/Midi, not just Common/Music
 
-GOG shippa **entrambe le metà** dello spazio di indici già renderizzate in
-audio: `Common/Midi/LBA1-NN.mp3`, N = 01..33 (le 02..10 sono le stesse
-registrazioni di `Common/Music/Track_NN.mp3`). Quindi basta quella cartella.
+GOG ships **both halves** of the index space already rendered to audio:
+`Common/Midi/LBA1-NN.mp3`, N = 01..33 (02..10 are the same recordings as
+`Common/Music/Track_NN.mp3`). So that one directory is enough.
 
-L'identità **`LBA1-NN` = entry XMI `NN-1`** non è indovinata, è inchiodata da
-un fingerprint di identità byte-a-byte: in MIDI_MI/MIDI_SB.HQR le entry
-{8, 9, 32} sono identiche fra loro ed è l'**unico** gruppo di 3 duplicati;
-fra gli mp3 lo sono {LBA1-09, -10, -33}, anch'esso unico. Offset +1, confermato.
+The identity **`LBA1-NN` = XMI entry `NN-1`** is not a guess; it is nailed down
+by a byte-for-byte identity fingerprint: in MIDI_MI/MIDI_SB.HQR entries
+{8, 9, 32} are identical to each other and are the **only** group of three
+duplicates; among the mp3s the same is true of {LBA1-09, -10, -33}, also unique.
+Offset +1, confirmed.
 
-Transcodifica: `tools/make_music_nds.sh` → per ogni traccia **due** WAV mono
-IMA-ADPCM a 22050 Hz (`musNN_l.wav` + `musNN_r.wav`), perché il player usa due
-canali hw separati per L e R. ~52 MB in totale, staging in
-`platform/nds/music_sd/`, destinazione **SD `fat:/lba1/music/`** (BYOA come i
-save). Niente estrazione ISO.
+Transcoding: `tools/make_music_nds.sh` → for each track **two** mono IMA-ADPCM
+WAVs at 22050 Hz (`musNN_l.wav` + `musNN_r.wav`), because the player uses two
+separate hardware channels for L and R. ~52 MB in total, staged in
+`platform/nds/music_sd/`, destination **SD `fat:/lba1/music/`** (BYOA, like the
+saves). No ISO extraction.
 
-**Perché ADPCM e non MP3**: l'hw audio del DS decodifica solo PCM8/PCM16/
-IMA-ADPCM/PSG. L'MP3 richiederebbe un decoder software (Helix) su una CPU che
-è già il collo di bottiglia (12-13 fps in redraw pieno). Nota: l'ADPCM
-hardware del DS NON è usabile per lo streaming — ha un solo header di stato a
-inizio stream e non lo ricarica ai loop point, quindi non si può ripartire a
-metà; si decodifica in PCM16 nel thread di refill (costo trascurabile).
+**Why ADPCM and not MP3**: the DS audio hardware decodes only
+PCM8/PCM16/IMA-ADPCM/PSG. MP3 would need a software decoder (Helix) on a CPU
+that is already the bottleneck (12-13 fps in a full redraw). Note: the DS's
+*hardware* ADPCM is not usable for streaming — it has a single state header at
+the start of the stream and does not reload it at loop points, so you cannot
+restart from the middle; we decode to PCM16 in the refill thread instead
+(negligible cost).
 
 ### Player
 
-Canali calico **14 = L, 15 = R**, riservati (nds_audio.c alloca SFX/voci solo
-0..13 via `NDS_SFX_CHANNELS=14`). Ognuno cicla un doppio buffer PCM16 in
-`SoundMode_Repeat`; un thread a 30 ms segue la testina via tick
-(`elapsed*32/timer` — sound timer e tick condividono la base 33 MHz, zero
-drift) e ridecodifica la metà appena liberata + `armDCacheFlush` (l'ARM7 fa
-DMA dalla main RAM, non dalla nostra D$). Metà = 8192 frame ≈ 0.37 s.
+Calico channels **14 = L, 15 = R**, reserved (nds_audio.c allocates SFX and
+voices only from 0..13, via `NDS_SFX_CHANNELS=14`). Each cycles a double PCM16
+buffer in `SoundMode_Repeat`; a 30 ms thread follows the playhead through ticks
+(`elapsed*32/timer` — the sound timer and the tick share the same 33 MHz base,
+so zero drift) and re-decodes the half just freed, plus `armDCacheFlush` (the
+ARM7 DMAs from main RAM, not from our D$). A half = 8192 frames ≈ 0.37 s.
 
-**One-shot, come il DOS**: il CD suonava la traccia una volta e poi silenzio
-finché il gioco non la ri-triggerava (l'engine lo sa via `EndMusicCD`/
-`GetMusicCD`). Serve comunque per i jingle, perché l'engine polla
-`IsMidiPlaying()`. `MUS_LOOP 1` per tornare al loop seamless.
+**One-shot, like DOS**: the CD played a track once and then went silent until
+the game re-triggered it (the engine knows this through
+`EndMusicCD`/`GetMusicCD`). It is needed for the jingles anyway, because the
+engine polls `IsMidiPlaying()`. `MUS_LOOP 1` to go back to a seamless loop.
 
-### Jingle senza toccare l'engine
+### Jingles without touching the engine
 
-`PlayMidi()` riceve il blob XMI, non il numero — ma **tutti e tre** i call site
-(AMBIANCE.C:424, AMBIANCE.C:485, PLAYFLA.C:310) fanno `NumXmi = num`
-immediatamente prima. Quindi la nostra `PlayMidi()` legge quel globale: **zero
-edit all'engine**. `Midi_Driver_Enable = 1` in stubs.c è l'interruttore
-(ADELINE.C non lo assegna mai — in DOS lo esportava A32MT32.DLL); di
-conseguenza PERSO.C:1485 carica `HQR_Midi` e **`midi_mi.hqr` deve stare nel
-nitroFS** (LBA.CFG dice `MidiType: Midi` → `MidiFM=0` → midi_mi, non midi_sb),
-perché `PlayMidiFile()` lo dereferenzia — i byte XMI li ignoriamo.
+`PlayMidi()` receives the XMI blob, not the number — but **all three** call
+sites (AMBIANCE.C:424, AMBIANCE.C:485, PLAYFLA.C:310) do `NumXmi = num`
+immediately before. So our `PlayMidi()` reads that global: **zero engine
+edits**. `Midi_Driver_Enable = 1` in stubs.c is the switch (ADELINE.C never
+assigns it — on DOS A32MT32.DLL exported it); as a consequence PERSO.C:1485
+loads `HQR_Midi` and **`midi_mi.hqr` must be in the nitroFS** (LBA.CFG says
+`MidiType: Midi` → `MidiFM=0` → midi_mi, not midi_sb), because
+`PlayMidiFile()` dereferences it — we ignore the XMI bytes themselves.
 
-Fade (`FadeMidiDown/Up`) asincroni sullo stesso thread, `soundChSetVolume`.
+Fades (`FadeMidiDown/Up`) are asynchronous on the same thread, through
+`soundChSetVolume`.
 
-**Entry 0 e 18 sono XMI vuoti** (242 byte ≈ 48 s di nulla) in entrambi gli
-HQR: in DOS lì non c'era musica, mentre il set mp3 del remaster ci mette
-tracce vere. Skippate (`MUS_IS_SILENT`, indici N = 1 e 19) per fedeltà.
+**Entries 0 and 18 are empty XMIs** (242 bytes ≈ 48 s of nothing) in both HQRs:
+on DOS there was no music there, whereas the remaster's mp3 set puts real
+tracks in those slots. Skipped (`MUS_IS_SILENT`, indices N = 1 and 19) for
+fidelity.
 
-### Lock (importante)
+### Locks (important)
 
-Tre lock, ordine fisso e mai invertito:
-`mmutex` (decoder + FILE del player) → `PORT_SndLock` (calico/PXI, condiviso
-con nds_audio.c) → `PORT_IoLock` (card).
+Three locks, in a fixed order that is never inverted:
+`mmutex` (the decoder and the player's FILE) → `PORT_SndLock` (calico/PXI,
+shared with nds_audio.c) → `PORT_IoLock` (the card).
 
-`PORT_IoLock` (nds_sys.c) è nato con questa sessione: il thread musica legge
-la SD **mentre** il main thread legge il nitroFS, e su flashcart è lo stesso
-dispositivo — né libfat né il layer nitroFS serializzano, due letture
-interlacciate corrompono (una scrittura di savegame è il caso peggiore). Ora
-ogni operazione su file di entrambi i thread lo prende, per una singola
-chiamata libc alla volta, così una lettura SD lenta non blocca un frame per
-più di un blocco. Coperti: `NDS_fopen/fclose/fread/fwrite/fseek/ftell/remove`
-e l'enumerazione directory (`SYS_FindFirst/Next/Close`, attiva nel menu save
-mentre la musica suona).
+`PORT_IoLock` (nds_sys.c) was born with this session: the music thread reads
+the SD **while** the main thread reads the nitroFS, and on a flashcart that is
+the same device — neither libfat nor the nitroFS layer serialises, and two
+interleaved reads corrupt each other (a savegame write being the worst case).
+Now every file operation on both threads takes it, for one libc call at a time,
+so a slow SD read never blocks a frame for more than one block. Covered:
+`NDS_fopen/fclose/fread/fwrite/fseek/ftell/remove` and directory enumeration
+(`SYS_FindFirst/Next/Close`, active in the save menu while the music plays).
 
-## Multilingua (VOX su SD + selettore lingua)
+## Multi-language (VOX on SD + language selector)
 
-**Il testo è GRATIS**: `text.hqr` che già spediamo contiene **tutte e 5 le
-lingue** (EN/FR/DE/SP/IT). Indicizzazione `Language*MAX_TEXT_LANG*2 + file*2`
-con `MAX_TEXT_LANG=14` → 28 entry per lingua, 141 totali = 5×28+1. Verificato
-decomprimendo: l'italiano c'è ed è corretto. Nota di formato: il blob
-`BufText` **comincia con la propria tabella di offset** (la prima WORD dice
-dove inizia il testo) — non è testo dal byte 0.
+**The text is FREE**: the `text.hqr` we already ship contains **all five
+languages** (EN/FR/DE/SP/IT). Indexing is
+`Language*MAX_TEXT_LANG*2 + file*2` with `MAX_TEXT_LANG=14` → 28 entries per
+language, 141 in total = 5×28+1. Verified by decompressing: Italian is there and
+correct. Format note: the `BufText` blob **starts with its own offset table**
+(the first WORD says where the text begins) — it is not text from byte 0.
 
-**Le voci no**: `MESSAGE.C` costruisce il nome come `VOX\` +
-`ListLanguage[LanguageCD]` + `ListFileText[file]` + `.VOX` → **12 banchi per
-lingua** (`GAM`, `000`..`010`), ~33 MB l'uno. Nel nitroFS stanno solo
-`en_gam`+`en_000` (era il limite noto "voci solo nella prima zona"): il resto
-arriva da **SD `fat:/lba1/vox/`**, staging in `platform/nds/sd_files/lba1/vox`
-via `tools/make_vox_nds.sh`. GOG spedisce **solo EN/FR/DE** (SP e IT uscirono
-sottotitolate) → 36 file, 99 MB.
+**The voices are not**: `MESSAGE.C` builds the name as `VOX\` +
+`ListLanguage[LanguageCD]` + `ListFileText[file]` + `.VOX` → **12 banks per
+language** (`GAM`, `000`..`010`), ~33 MB each. Only `en_gam`+`en_000` are in the
+nitroFS (this was the known "voices only in the first area" limitation): the
+rest comes from **SD `fat:/lba1/vox/`**, staged into
+`platform/nds/sd_files/lba1/vox` by `tools/make_vox_nds.sh`. GOG ships **only
+EN/FR/DE** (SP and IT shipped subtitled) → 36 files, 99 MB.
 
-`RouteSdPath()` (ex `RouteSavePath`) instrada `*.vox` sulla SD **solo se il
-file c'è davvero**, altrimenti lascia il path al nitroFS: una cart senza SD
-continua a parlare nella zona iniziale. Stesso routing per l'enumerazione
-(`SYS_FindFirst("VOX\*.VOX")` di `InitVoiceFile`). Tetto: `MAX_FILE_VOICE 42`
-e ne enumeriamo 36 — ci sta, ma è stretto se si aggiungono lingue.
+`RouteSdPath()` (formerly `RouteSavePath`) routes `*.vox` to the SD **only if
+the file is really there**, otherwise it leaves the path on the nitroFS: a cart
+with no SD still speaks in the opening area. The same routing applies to the
+enumeration (`InitVoiceFile`'s `SYS_FindFirst("VOX\*.VOX")`). Ceiling:
+`MAX_FILE_VOICE 42` against the 36 we enumerate — it fits, but it is tight if
+languages are added.
 
-### Due trappole trovate spostando i VOX su supporto scrivibile
+### Two traps found when moving the VOX onto writable media
 
-1. **`ClearVoiceFile()` CANCELLA i banchi** quando `FlagKeepVoice` è off.
-   Innocuo finché stavano nel nitroFS read-only, ora sarebbero 99 MB di
-   roba dell'utente. `LBA.CFG` spedisce `FlagKeepVoice: ON`, ma `NDS_remove`
-   ora **rifiuta comunque** qualunque `*.vox` (ritorna successo: l'engine fa
-   solo bookkeeping).
-2. **`InitFileNar()` aveva un loop infinito**, e i dev lo sapevano — il
-   commento originale dice `// Sans Filet`. `while (!offset) Read(...)` gira
-   per sempre su un file troncato (Read torna 0 e `offset` resta 0): copia
-   su SD interrotta = hang. Aggiunta uscita su `wr != 4`, più un bound su
-   `offset > 2048` perché il blob va dritto in `BufMemoSeek`, che è una
-   SmartMalloc fissa da 2048 (PERSO.C:1558) — stessa famiglia
-   dell'overflow di BufOrder. Edit PORT-gated in MESSAGE.C.
+1. **`ClearVoiceFile()` DELETES the banks** when `FlagKeepVoice` is off.
+   Harmless while they lived in the read-only nitroFS; now it would be 99 MB of
+   the user's own files. `LBA.CFG` ships `FlagKeepVoice: ON`, but `NDS_remove`
+   now **refuses any `*.vox` regardless** (returning success: the engine only
+   does bookkeeping with it).
+2. **`InitFileNar()` had an infinite loop**, and the developers knew — the
+   original comment reads `// Sans Filet`. `while (!offset) Read(...)` spins
+   forever on a truncated file (Read returns 0 and `offset` stays 0): an
+   interrupted copy to the SD = a hang. Added an exit on `wr != 4`, plus a bound
+   on `offset > 2048` because the blob goes straight into `BufMemoSeek`, which
+   is a fixed 2048-byte SmartMalloc (PERSO.C:1558) — the same family as the
+   BufOrder overflow. A PORT-gated edit in MESSAGE.C.
 
-### Selettore lingua (nds_ui.c)
+### Language selector (nds_ui.c)
 
-LBA1 **non ha nessuna opzione lingua in-game**: `InitLanguage()` legge
-LBA.CFG una volta al boot e basta. Il selettore è stato costruito: occupa il
-touch screen **quando il gameplay non è attivo** (`!PlayStable`), dove gli 8
-pulsanti sarebbero comunque tutti disabilitati — zero spazio rubato al
-pannello behaviour. Griglia 3+2, footer `TEXT xx / VOICE xx`.
+LBA1 **has no in-game language option at all**: `InitLanguage()` reads LBA.CFG
+once at boot and that is it. The selector was built: it occupies the touch
+screen **when gameplay is not active** (`!PlayStable`), where the eight buttons
+would all be disabled anyway — no space stolen from the behaviour panel. A 3+2
+grid, with a `TEXT xx / VOICE xx` footer.
 
-Due impostazioni indipendenti, come nella release originale: `Language`
-(sottotitoli, tutte e 5) e `LanguageCD` (parlato); SP e IT ricadono
-automaticamente sulla voce inglese (`LangVoice[]`).
+Two independent settings, as in the original release: `Language` (subtitles,
+all five) and `LanguageCD` (spoken); SP and IT automatically fall back to the
+English voice (`LangVoice[]`).
 
-Applicare il cambio è **una sola chiamata**: azzerare la guardia di cache
-`LastFileInit` e rientrare in `InitDial(cur)` — ricarica il testo per
-`Language` e, via `InitSpeak()`, riapre il banco per `LanguageCD`.
+Applying the change is **a single call**: clear the `LastFileInit` cache guard
+and re-enter `InitDial(cur)` — it reloads the text for `Language` and, through
+`InitSpeak()`, reopens the bank for `LanguageCD`.
 
-**MA `InitDial` fa HQR load e I/O su card, e `nds_ui.c` gira nell'ISR di
-VBlank.** Quindi il tap posta solo su una mailbox (`LangMail`), drenata da
-`PORT_PumpLang()` dal **main thread**: chiamata da `Vsync`/`Flip`/
-`CopyBlockPhys` in nds_video.c (i punti di redraw che l'engine attraversa sia
-in gameplay sia nei menu), con guardia di rientranza.
+**BUT `InitDial` does an HQR load and card I/O, and `nds_ui.c` runs in the
+VBlank ISR.** So the tap only posts to a mailbox (`LangMail`), drained by
+`PORT_PumpLang()` from the **main thread**: called from
+`Vsync`/`Flip`/`CopyBlockPhys` in nds_video.c (the redraw points the engine
+crosses both in gameplay and in the menus), with a reentrancy guard.
 
-La scelta si ricorda in `fat:/lba1/save/lang.txt` (file nostro, non LBA.CFG —
-il CFG ha il vincolo CRLF di DEF_FILE.C) e viene riapplicata al boot appena
-`LastFileInit >= 0`, cioè strettamente dopo che `InitLanguage()` ha letto il
-config: così lo sovrascriviamo invece di corrergli contro.
+The choice is remembered in `fat:/lba1/save/lang.txt` (our own file, not
+LBA.CFG — the CFG has DEF_FILE.C's CRLF constraint) and is reapplied at boot as
+soon as `LastFileInit >= 0`, i.e. strictly after `InitLanguage()` has read the
+config: that way we overwrite it rather than racing it.
 
-Limite noto: la UI touch compare solo dopo il primo gameplay
-(`UiAutoShown`), quindi al primissimo avvio la lingua si cambia entrando in
-partita e mettendo in pausa. Dal boot successivo `lang.txt` fa il resto.
+Known limitation: the touch UI only appears after the first gameplay
+(`UiAutoShown`), so on the very first run the language is changed by entering
+the game and pausing. From the next boot on, `lang.txt` does the rest.
 
-## UI secondo schermo (nds_ui.c + nds_ui_glue.c — sessione touch UI)
+## Bottom-screen UI (nds_ui.c + nds_ui_glue.c — touch UI session)
 
-**Fatta e verificata su melonDS** (test manuale dell'utente: tutti i pulsanti
-funzionano; gating reale dei flag inventario attivo — a inizio partita
-ball/sabre/holomap/pinguino sono spenti finché non vengono ottenuti).
+**Done and verified on melonDS** (manual test by the user: every button works;
+the real inventory-flag gating is active — at the start of a game
+ball/sabre/holomap/penguin are off until they are obtained).
 
-### Layout (BG2 sub, bitmap 8bpp 256x192)
+### Layout (sub BG2, 8bpp 256x192 bitmap)
 
 ```
 ┌──────────────────────────────────────────────┐
-│ ♥ [██████ vita ██████]   ⛁ kashes   ✤ n/m    │  strip di stato y 0..45
-│ ✦ [█ magia (se tunica+lv>0) █] ⚿ chiavi FPSnn│  (redraw solo se cambia)
+│ ♥ [██████ life ██████]   ⛁ kashes   ✤ n/m    │  status strip y 0..45
+│ ✦ [█ magic (if tunic+lvl>0) █] ⚿ keys  FPSnn │  (redrawn only on change)
 ├──────────────────────────────────────────────┤
 │ [NORMAL] [SPORTY] [AGGRO] [SNEAK]            │  behaviour y 50..111
-│ [BALL]   [SABER]  [HOLOMAP] [PENGUIN]        │  azioni    y 116..177
+│ [BALL]   [SABER]  [HOLOMAP] [PENGUIN]        │  actions   y 116..177
 ├──────────────────────────────────────────────┤
 │    L: CTRL PANEL - HOLD SELECT: CONSOLE      │  hint y 184
 └──────────────────────────────────────────────┘
 ```
-Pulsanti 59x62 (4 colonne x 63px, comodi per il pollice), icona 16x16
-disegnata 2x + label 5x7; tutto font/icone = tabelle C in nds_ui.c (BYOA,
-zero asset esterni). Stati: spento (faccia scura, glifi dim, touch ignorato),
-attivo (bevel+testo oro: il behaviour corrente e l'arma corrente), premuto
-(faccia chiara). Palette UI = entry SUB 1..31 (0 e 240..255 restano alla
-console). Stile LBA: pannelli blu scurissimi, accenti oro.
+Buttons are 59x62 (4 columns of 63 px, comfortable for a thumb), with a 16x16
+icon drawn at 2x plus a 5x7 label; all the fonts and icons are C tables in
+nds_ui.c (BYOA, zero external assets). States: off (dark face, dim glyphs,
+touch ignored), active (bevel + gold text: the current behaviour and the current
+weapon), pressed (light face). The UI palette is SUB entries 1..31 (0 and
+240..255 stay with the console). LBA styling: very dark blue panels, gold
+accents.
 
-### Video sub / convivenza con la console
+### Sub video / coexisting with the console
 
-`PORT_UI_Init` (main_nds.c, dopo nitroFSInit): `videoSetModeSub(MODE_5_2D |
-DISPLAY_BG0_ACTIVE)` — la console libnds resta su BG0 (map 22/tile 3, 44-56K
-di VRAM C), la UI è BG2 ExRot bitmap a map base 4 (64K..128K, nessuna
-sovrapposizione). ATTENZIONE trovata sul campo: a parità di priorità BG0
-vince su BG2 → il testo console "sanguinava" sopra la UI; serve
-`REG_BG0CNT_SUB |= 3` (console a priorità 3, UI a 0).
-Disegno: shadow buffer 48K in bss (byte write liberi) + blit dei soli rect
-sporchi in u32 (VRAM ignora i byte write). Redraw SOLO su cambiamento di
-stato/valore; il caso peggiore (8 pulsanti che flippano) è pochi KB di
-scritture nella VBlank ISR — la stessa ISR fa già 64K/frame nel present MCGA.
+`PORT_UI_Init` (main_nds.c, after nitroFSInit): `videoSetModeSub(MODE_5_2D |
+DISPLAY_BG0_ACTIVE)` — the libnds console stays on BG0 (map 22/tile 3, 44-56K of
+VRAM C), the UI is BG2 ExRot bitmap at map base 4 (64K..128K, no overlap).
+A gotcha found in the field: at equal priority BG0 beats BG2 → the console text
+"bled" over the UI; you need `REG_BG0CNT_SUB |= 3` (console at priority 3, UI at
+0).
+Drawing: a 48K shadow buffer in bss (byte writes are free there) plus a blit of
+the dirty rectangles only, in u32 (VRAM ignores byte writes). Redraw ONLY on a
+state/value change; the worst case (8 buttons flipping) is a few KB of writes in
+the VBlank ISR — the same ISR already does 64K/frame in the MCGA present.
 
-- Boot: console visibile (log come prima). Alla PRIMA scena di gioco la UI
-  appare da sola (`PORT_UI_SceneSeen`).
-- **SELECT tenuto 1 s = toggle console/UI** (solo il bit BG2 di
-  DISPCNT_SUB: deterministico). La console continua a stampare anche mentre
-  è coperta.
+- Boot: the console is visible (logging as before). At the FIRST gameplay scene
+  the UI appears by itself (`PORT_UI_SceneSeen`).
+- **SELECT held for 1 s = toggle console/UI** (only the BG2 bit of DISPCNT_SUB:
+  deterministic). The console keeps printing even while covered.
 
-### Touch → azione (mappa e meccanismo di iniezione)
+### Touch → action (the map and the injection mechanism)
 
-La VBlank ISR legge `touchRead()` e NON chiama mai l'engine: posta in 3
-mailbox one-shot consumate in UN punto del MainLoop di PERSO.C (edit
-#29-31, `#ifdef PORT_NDS`). **Percorso touch indurito** (bug "icone che
-lampeggiano + slowdown", sessione stessa): un tap è accettato solo con
-`KEY_TOUCH` held **e** `touchRead()==true` **e** coordinate in range per 2
-VBlank consecutivi (un campione spurio singolo non può mai sparare), UNA
-azione per contatto (ri-arma dopo 2 frame puliti di rilascio), cooldown
-250 ms tra azioni, i tap no-op sul behaviour corrente vengono scartati
-(SetComportement ricarica il body anche a valore uguale = churn), e il
-touch parte **DISARMATO al boot**: serve un rilascio pulito prima del primo
-tap accettato — melonDS può riportare un pennino-fantasma "premuto da
-sempre" con coordinate rumorose finché non arriva il primo click reale
-(sintomo osservato: fila behaviour che lampeggia da sola e si "guarisce"
-dopo il primo tocco vero). In più
-il predicato gameplay è **debounced** (10 VBlank stabili prima di flippare
-enabled/disabled: l'engine brakketta SaveTimer/RestoreTimer dentro il
-frame e la ISR può campionare a metà bracket) e la finestra di recency di
-AffScene è 1.5 s (i full redraw da recenter distano fino a ~0.7 s sotto
-autoenter — sotto la soglia vecchia di 0.8 s il gate flappava).
+The VBlank ISR reads `touchRead()` and NEVER calls into the engine: it posts to
+3 one-shot mailboxes consumed at ONE point in PERSO.C's MainLoop (edits
+#29-31, `#ifdef PORT_NDS`). **The touch path is hardened** (the "flickering
+icons + slowdown" bug, same session): a tap is accepted only with `KEY_TOUCH`
+held **and** `touchRead()==true` **and** coordinates in range for 2 consecutive
+VBlanks (a single spurious sample can never fire), ONE action per contact
+(re-armed after 2 clean frames of release), a 250 ms cooldown between actions,
+no-op taps on the current behaviour are discarded (SetComportement reloads the
+body even for the same value = churn), and touch starts **DISARMED at boot**: a
+clean release is required before the first accepted tap — melonDS can report a
+phantom stylus "pressed forever" with noisy coordinates until the first real
+click arrives (observed symptom: the behaviour row flickering on its own and
+"healing" after the first genuine touch). On top of that the gameplay predicate
+is **debounced** (10 stable VBlanks before flipping enabled/disabled: the engine
+brackets SaveTimer/RestoreTimer inside the frame and the ISR can sample
+mid-bracket), and AffScene's recency window is 1.5 s (full redraws from a
+recentre can be up to ~0.7 s apart under autoenter — below the old 0.8 s
+threshold the gate flapped).
 
-| Pulsante | Meccanismo | Percorso engine |
+| Button | Mechanism | Engine path |
 |---|---|---|
-| Normal/Sporty/Aggro/Sneak | `PORT_TouchComportement=0..3` | `SetComportement()` diretto (= opcode SET_COMPORTEMENT di GERELIFE) — niente flash del menu behaviour, niente AffScene(TRUE) |
-| Ball / Saber | `PORT_InjectKey=K_1/K_2` (MyKey per UNA iterazione) | gli handler tastiera K_1/K_2 già presenti (equip + anim degaine), gating engine sui flag |
-| Holomap | `PORT_TouchInvAction=0` | lo switch(InventoryAction) esistente, senza aprire l'inventario |
-| Penguin | `PORT_TouchInvAction=14` | idem (spawn del pinguino = STESSO codice della selezione da inventario) |
+| Normal/Sporty/Aggro/Sneak | `PORT_TouchComportement=0..3` | `SetComportement()` directly (= GERELIFE's SET_COMPORTEMENT opcode) — no behaviour-menu flash, no AffScene(TRUE) |
+| Ball / Saber | `PORT_InjectKey=K_1/K_2` (MyKey for ONE iteration) | the existing K_1/K_2 keyboard handlers (equip + draw animation), with the engine's own flag gating |
+| Holomap | `PORT_TouchInvAction=0` | the existing switch(InventoryAction), without opening the inventory |
+| Penguin | `PORT_TouchInvAction=14` | same (spawning the penguin = the SAME code as selecting it from the inventory) |
 
-Perché non FuncKey: **l'engine non legge mai FuncKey** (verificato: solo la
-dichiarazione in LIB_SYS.H) — la mappa X/Y/L/R→FK_F1..4 del bring-up era
-morta; i behaviour da tastiera in questo sorgente sono K_F5..K_F8 via `Key`
-(con flash di MenuComportement). Mailbox > iniezione a frame: consumo
-esattamente-una-volta anche durante un full redraw da 235 ms.
-Mailbox non consumate scadono dopo ~200 ms (MAIL_TTL) — un tap postato
-mentre si apriva un dialogo non spara mai in ritardo.
+Why not FuncKey: **the engine never reads FuncKey** (verified: only the
+declaration in LIB_SYS.H exists) — the bring-up's X/Y/L/R→FK_F1..4 map was
+dead; the keyboard behaviours in this source are K_F5..K_F8 through `Key` (with
+a MenuComportement flash). Mailbox > per-frame injection: exactly-once
+consumption even during a 235 ms full redraw.
+Unconsumed mailboxes expire after ~200 ms (MAIL_TTL) — a tap posted while a
+dialogue was opening never fires late.
 
-### Gating (pulsanti attivi SOLO in gameplay interattivo)
+### Gating (buttons active ONLY in interactive gameplay)
 
-`GameplayActive()` = `CmptMemoTimerRef == 0` (profondità SaveTimer: >0 in
-ogni menu/inventario/holomap/opzioni) AND `!FlagCredits` AND AffScene
-eseguita < 40 tick fa (stampigliata da `__wrap_AffScene` in nds_prof.c:
-falsa in main menu/intro/FLA/holomap) AND `PORT_UI_PersoManual()` (glue:
-`Body != -1 && Move == MOVE_MANUAL`, falsa nelle cutscene). In più, per
-oggetto, lo stesso predicato di `Inventory()`: `ListFlagGame[item]==1 &&
-ListFlagGame[FLAG_CONSIGNE]==0`; il pinguino richiede anche
-`NumPingouin > 0` (oggetto valido nel cubo — default -1). Le stesse guardie
-sono comunque replicate ENGINE-side negli hook (#30/#31): doppia cintura.
+`GameplayActive()` = `CmptMemoTimerRef == 0` (SaveTimer depth: >0 in every
+menu/inventory/holomap/options screen) AND `!FlagCredits` AND AffScene ran
+< 40 ticks ago (stamped by `__wrap_AffScene` in nds_prof.c: false in the main
+menu/intro/FLA/holomap) AND `PORT_UI_PersoManual()` (glue: `Body != -1 && Move
+== MOVE_MANUAL`, false in cutscenes). On top of that, per item, the same
+predicate as `Inventory()`: `ListFlagGame[item]==1 &&
+ListFlagGame[FLAG_CONSIGNE]==0`; the penguin also requires `NumPingouin > 0`
+(a valid object in the cube — default -1). The same guards are replicated
+ENGINE-side in the hooks (#30/#31) anyway: belt and braces.
 
-- `nds_ui_glue.c` è l'unico file platform compilato con ENGINE_CFLAGS (vere
-  intestazioni engine) per leggere `ListObjet[0].LifePoint/Body/Move` senza
-  specchiare la struct T_OBJET; tutto il resto sono extern di WORD/UBYTE
+- `nds_ui_glue.c` is the only platform file compiled with ENGINE_CFLAGS (real
+  engine headers) so it can read `ListObjet[0].LifePoint/Body/Move` without
+  mirroring the T_OBJET struct; everything else is WORD/UBYTE externs
   (Comportement, Weapon, MagicPoint/Level, NbGoldPieces, NbLittleKeys,
-  NbFourLeafClover/NbCloverBox, NumPingouin, ListFlagGame,
-  CmptMemoTimerRef, FlagCredits).
+  NbFourLeafClover/NbCloverBox, NumPingouin, ListFlagGame, CmptMemoTimerRef,
+  FlagCredits).
 
-### Contatori live (strip di stato)
+### Live counters (status strip)
 
-Vita = `ListObjet[0].LifePoint` /50 (barra verde); magia = `MagicPoint` su
-max `MagicLevel*20`, visibile solo con `FLAG_TUNIQUE` e livello>0 (larghezza
-frame proporzionale al livello, come DrawInfoMenu); kashes `NbGoldPieces`,
-chiavi `NbLittleKeys`, quadrifogli `NbFourLeafClover/NbCloverBox`.
-Campionati ogni VBlank, ridisegnati solo se cambiati (memcmp su struct).
+Life = `ListObjet[0].LifePoint` /50 (a green bar); magic = `MagicPoint` out of a
+maximum of `MagicLevel*20`, visible only with `FLAG_TUNIQUE` and level > 0
+(frame width proportional to the level, as in DrawInfoMenu); kashes
+`NbGoldPieces`, keys `NbLittleKeys`, clovers
+`NbFourLeafClover/NbCloverBox`. Sampled every VBlank, redrawn only if changed
+(a memcmp on a struct).
 
-### Controlli pad (remap sessione touch UI)
+### Pad controls (touch UI session remap)
 
-| Tasto DS | Funzione |
+| DS button | Function |
 |---|---|
-| dpad | movimento (Joy) |
-| B / A | azione (space) / valida-recentra (return) |
-| **L** | **CTRL DOS**: tieni premuto = pannello behaviour classico (MenuComportement), scegli col dpad |
-| X / Y / R | behaviour diretto Normal / Sporty / Aggressive (stessa mailbox del touch, niente flash menu); Discreto = touch o pannello L |
-| SELECT | alt; tenuto 1 s = toggle console/UI sul sub |
-| START | Esc (menu pausa / skip) |
+| dpad | movement (Joy) |
+| B / A | action (space) / validate-recentre (return) |
+| **L** | **the DOS CTRL**: hold = the classic behaviour panel (MenuComportement), choose with the dpad |
+| X / Y / R | direct behaviour Normal / Sporty / Aggressive (the same mailbox as the touch, no menu flash); Discreet = touch or the L panel |
+| SELECT | alt; held for 1 s = toggle console/UI on the sub screen |
+| START | Esc (pause menu / skip) |
 
-Legenda sulla UI touch: tag "X"/"Y"/"R" nell'angolo dei pulsanti behaviour,
-hint "L: CTRL PANEL - HOLD SELECT: CONSOLE" in basso.
+Legend on the touch UI: "X"/"Y"/"R" tags in the corner of the behaviour
+buttons, and the hint "L: CTRL PANEL - HOLD SELECT: CONSOLE" at the bottom.
 
-### Crash menu pausa (fix edit #32, stessa sessione)
+### Pause-menu crash (fixed in edit #32, same session)
 
-START in gioco → guru `data abort` in `_free_r` con addr/r7 ASCII ("%\nor").
-Causa: `GetCustomizedMultiText` (MSG_CUST.C, codice community) ritornava il
-letterale `""` quando un testo manca sia in TEXT.HQR che nel ctxt.csv (non
-shippato) e i chiamanti fanno `free()` del risultato per contratto →
-`free("")` su .rodata: msvcrt lo ignorava, newlib cammina i byte ASCII come
-chunk header e abortisce. Trigger: i testi **950/951 "Load/Save game"**
-(aggiunti dalla community al menu pausa) non esistono in TEXT.HQR. Fix:
-ritorna `calloc(1,1)` liberabile (edit #32). Repro headless:
+START in game → a `data abort` guru in `_free_r` with an ASCII addr/r7
+("%\nor"). Cause: `GetCustomizedMultiText` (MSG_CUST.C, community code)
+returned the literal `""` when a text is missing from both TEXT.HQR and
+ctxt.csv (which we do not ship), and the callers `free()` the result by
+contract → `free("")` on .rodata: msvcrt ignored it, newlib walks the ASCII
+bytes as a chunk header and aborts. Trigger: texts **950/951 "Load/Save game"**
+(added to the pause menu by the community) do not exist in TEXT.HQR. Fix:
+return a freeable `calloc(1,1)` (edit #32). Headless repro:
 `nitrofiles/autopause`.
 
-### Verifica / regressione
+### Verification / regression
 
-- melonDS: boot pulito, prima scena a **50 fps** invariati (P5 fps50 negli
-  screenshot col profiler attivo), heap invariato (la UI usa solo 48K di
-  bss + 0 heap), stack DTCM non toccato (nessun dato UI in DTCM, ISR con
-  locals piccoli e niente printf).
-- Touch verificato a mano dall'utente: **tutti i pulsanti funzionano**
-  (behaviour switch istantaneo, ball/saber, holomap, contatori live). Il
-  gating è stato provato col hook temporaneo `nitro:/uitest` (forzava i 3
-  flag), POI RIMOSSO: la build finale gata sui flag reali.
-- Build SDL riverificata verde dopo gli edit #29-31 (guardie PORT_NDS).
+- melonDS: clean boot, first scene at an unchanged **50 fps** (P5 fps50 in the
+  screenshots with the profiler active), heap unchanged (the UI uses only 48K of
+  bss and 0 heap), DTCM stack untouched (no UI data in DTCM, an ISR with small
+  locals and no printf).
+- Touch verified by hand by the user: **every button works** (instant behaviour
+  switch, ball/sabre, holomap, live counters). The gating was tested with a
+  temporary `nitro:/uitest` hook (which forced the 3 flags), THEN REMOVED: the
+  final build gates on the real flags.
+- SDL build re-verified green after edits #29-31 (PORT_NDS guards).
 
-### Restano (polish futuri)
+### Remaining (future polish)
 
-- Icone "vere" renderizzate a runtime da INVOBJ.HQR (v1 = glifi C
-  disegnati a mano; AGGRO/SPORTY sono i più naive).
-- Pinguino non provato dal vivo (serve una partita avanzata con
-  FLAG_MECA_PINGOUIN: il percorso è lo stesso switch dell'holomap, provato).
-- Eventuale feedback audio sul tap (SFX 41?) e pulsante protopack/clover.
+- "Real" icons rendered at runtime from INVOBJ.HQR (v1 = hand-drawn C glyphs;
+  AGGRO/SPORTY are the most naive ones).
+- The penguin has not been tried live (it needs an advanced save with
+  FLAG_MECA_PINGOUIN: the path is the same switch as the holomap, which has
+  been tried).
+- Possibly audio feedback on a tap (SFX 41?) and a protopack/clover button.
 
-## Aperti / TODO
+## Open items / TODO
 
-- **Savegame**: FATTO su fat:/ (vedi "## Savegame su fat:/"). Restano: BYOA
-  degli asset da SD (oggi solo i save; i VOX extra potrebbero venire letti
-  da fat:/lba1/ con la stessa tecnica di routing).
-- **Audio**: FATTO (SFX + voci, vedi "## Audio ARM7/calico"; musica d'area +
-  jingle, vedi "## Musica"; VOX completi + selettore lingua, vedi "##
-  Multilingua"). **Da collaudare**: musica e multilingua non sono ancora
-  mai stati provati, né su melonDS né su hardware.
-- **Holomap**: TEXTURE.ASM ancora stub (come SDL).
-- **Unaligned residui**: il pun Info/Info1 è FIXATO (edit #33, vedi "##
-  Freeze dossier"); resta HOLOMAP.C da riguardare quando si farà l'holomap.
-- **MCGA path** (FLA/SceZoom): implementato (present-from-Phys nel VBlank) ma
-  mai esercitato (niente .FLA shippati).
-- **UI touch / seconda schermata**: per ora la console di debug; niente touch.
-- `GetMouseDep`/mouse = zeri: i menu funzionano da tastiera/pad.
-- FICHE.C aveva un `GET_WORD` suo: convertito, ma il file "fiche" (scheda
-  personaggio, K_F?) non è stato esercitato a fondo.
-- Il guard-heap e i log [MEM]/[FIO] sono ATTIVI anche nella build finale:
-  costano poco e sono oro per il debug; togliere `PORT_HeapCheck` per la
-  build "release" quando si farà l'ottimizzazione.
+- **Savegames**: DONE on fat:/ (see "## Savegames on fat:/"). Remaining: BYOA
+  for the assets from the SD (today only the saves; the extra VOX files could be
+  read from fat:/lba1/ with the same routing technique).
+- **Audio**: DONE (SFX + voices, see "## ARM7/calico audio"; area music +
+  jingles, see "## Music"; complete VOX + the language selector, see
+  "## Multi-language"). **To be checked**: the music and the multi-language
+  support have never been tried yet, neither on melonDS nor on hardware.
+- **Holomap**: TEXTURE.ASM still a stub (as on SDL).
+- **Residual unaligned accesses**: the Info/Info1 pun is FIXED (edit #33, see
+  "## Freeze dossier"); HOLOMAP.C still needs another look when the holomap is
+  done.
+- **MCGA path** (FLA/SceZoom): implemented (present-from-Phys in the VBlank) but
+  never exercised (no .FLA files are shipped).
+- **Touch UI / second screen**: for now the debug console; no touch.
+- `GetMouseDep`/mouse = zeros: the menus work from keyboard/pad.
+- FICHE.C had a `GET_WORD` of its own: converted, but the "fiche" file (the
+  character sheet, K_F?) has not been exercised thoroughly.
+- The guard heap and the [MEM]/[FIO] logs are ACTIVE in the final build too:
+  they cost little and are gold for debugging; remove `PORT_HeapCheck` for a
+  "release" build when the optimisation pass happens.

@@ -180,8 +180,8 @@ just a number.
 Deeper engineering notes live next to the code they describe:
 `platform/nds/PORTING_NOTES_NDS.md`, `platform/sdl/PORTING_NOTES.md`,
 `translate/TRANSLATION_NOTES.md`. They are working documents and go into far
-more detail than this file. The translation notes are in English; the two
-porting notes are still in Italian.
+more detail than this file. The DS and translation notes are in English; the
+SDL porting notes are still in Italian.
 
 ## Where the engine comes from
 
