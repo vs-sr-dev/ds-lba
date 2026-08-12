@@ -107,9 +107,11 @@ inconsistent mixed build).
   TIMER_A.C (relative ++ only: RestoreTimer rewinds TimerRef). Input on the
   VBlank IRQ (scanKeys): dpad→Joy(1/2/4/8), B→Fire1(space), A→Fire2(return),
   **L→Fire4(ctrl)+Key=0x1D** (= the DOS CTRL: hold L for the classic behaviour
-  panel, choose with the dpad), SELECT→Fire8(alt), **X/Y/R→direct behaviour
-  Normal/Sporty/Aggressive** through PORT_TouchComportement (Discreet: touch or
-  the L panel), START→Key=1(Esc); GetAscii is an int16h-style ring buffer
+  panel, choose with the dpad), SELECT→Fire8(alt), **R→Fire8(alt: throw)**,
+  **Y→Fire32(shift: inventory ring)**, **X→direct behaviour Normal** through
+  PORT_TouchComportement (Sporty/Aggressive/Discreet: touch or the L panel —
+  see "Pad controls" for why), START→Key=1(Esc); GetAscii is an int16h-style
+  ring buffer
   (A=0x1C0D, B=0x3920, START=0x011B). NB: the bring-up's X/Y/L/R→FuncKey F1-F4
   map was dead code (the engine never reads FuncKey).
   Mouse: stub. DosMalloc→accounted calloc.
@@ -822,12 +824,22 @@ maximum of `MagicLevel*20`, visible only with `FLAG_TUNIQUE` and level > 0
 | dpad | movement (Joy) |
 | B / A | action (space) / validate-recentre (return) |
 | **L** | **the DOS CTRL**: hold = the classic behaviour panel (MenuComportement), choose with the dpad |
-| X / Y / R | direct behaviour Normal / Sporty / Aggressive (the same mailbox as the touch, no menu flash); Discreet = touch or the L panel |
+| **R** | **the DOS ALT** (F_ALT): hold to aim and throw the magic ball / sabre. Behaviour-agnostic in the engine (OBJECT.C:2251), so it works in any behaviour |
+| **Y** | **the DOS SHIFT** (F_SHIFT): open the inventory ring (PERSO.C:552) — it reaches every item, not just the 4 touch icons |
+| X | direct behaviour Normal (the same mailbox as the touch, no menu flash) |
 | SELECT | alt; held for 1 s = toggle console/UI on the sub screen |
 | START | Esc (pause menu / skip) |
 
-Legend on the touch UI: "X"/"Y"/"R" tags in the corner of the behaviour
-buttons, and the hint "L: CTRL PANEL - HOLD SELECT: CONSOLE" at the bottom.
+**Superseded (2026-07-14).** X/Y/R used to be Normal/Sporty/Aggressive. Two of
+the three were spent on a redundancy — the behaviours are already on the touch
+panel and in the L panel — while two engine inputs had no button at all: F_ALT,
+which is how you throw (SELECT had it, but hold-SELECT toggles the console, so
+it was unusable for aiming), and F_SHIFT, which opens the inventory ring, so
+every item outside the four touch icons was unreachable from the pad. Sporty
+and Aggressive went back to the touch UI and the L panel; X keeps Normal.
+
+Legend on the touch UI: an "X" tag on NORMAL and an "R" tag on BALL, and the
+hint "L: CTRL PANEL - HOLD SELECT: CONSOLE" at the bottom.
 
 ### Pause-menu crash (fixed in edit #32, same session)
 
