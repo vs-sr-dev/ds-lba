@@ -1,10 +1,10 @@
 {
   "$schema": "https://recomp.fyi/schema/v1.json",
   "game": "Little Big Adventure",
-  "system": "PC",
+  "system": "PC (DOS)",
   "type": "port",
   "status": "playable",
   "targets": [
-    "DS"
+    "NDS"
   ]
 }
